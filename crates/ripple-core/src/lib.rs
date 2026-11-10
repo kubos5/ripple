@@ -97,4 +97,20 @@ impl Ripple {
     pub fn media_path(&self, token: &str) -> Option<PathBuf> {
         self.app().media.path(token).filter(|p| p.is_file())
     }
+
+    /// Serves a media file to the webview. With `wav` set, Ogg Opus audio is
+    /// decoded first (for webviews without native Ogg Opus playback).
+    pub fn serve_media(&self, token: &str, range: Option<&str>, wav: bool) -> Result<media::Served> {
+        let path = self.media_path(token).ok_or_else(|| anyhow::anyhow!("not found"))?;
+        #[cfg(feature = "voice")]
+        if wav {
+            let cached = path.with_extension("wav");
+            if !cached.is_file() {
+                std::fs::write(&cached, voice::ogg_opus_to_wav(&std::fs::read(&path)?)?)?;
+            }
+            return media::serve(&cached, range);
+        }
+        let _ = wav;
+        media::serve(&path, range)
+    }
 }

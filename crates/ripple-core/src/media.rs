@@ -260,3 +260,75 @@ mod tests {
         assert_eq!(mime_for("a.OGG"), "audio/ogg");
     }
 }
+
+// ───────────────────────────── serving files to the webview ─────────────────────────────
+
+/// A (possibly partial) file read, ready to be turned into an HTTP response.
+pub struct Served {
+    /// 200 or 206.
+    pub status: u16,
+    pub mime: &'static str,
+    pub start: u64,
+    pub end: u64,
+    pub total: u64,
+    pub body: Vec<u8>,
+}
+
+/// Largest slice returned for one request; players simply ask for the next range.
+const MAX_CHUNK: u64 = 4 * 1024 * 1024;
+
+/// Reads a file honouring an HTTP `Range` header (`bytes=start-end`), which
+/// `<video>` and `<audio>` elements need for seeking.
+pub fn serve(path: &Path, range: Option<&str>) -> Result<Served> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let total = f.metadata()?.len();
+    let mime = mime_for(&path.to_string_lossy());
+    let parsed = range.and_then(|r| r.trim().strip_prefix("bytes=")).and_then(|r| {
+        let (a, b) = r.split(',').next()?.split_once('-')?;
+        match (a.trim().parse::<u64>().ok(), b.trim().parse::<u64>().ok()) {
+            (Some(s), Some(e)) => Some((s, e.min(total.saturating_sub(1)))),
+            (Some(s), None) => Some((s, total.saturating_sub(1))),
+            (None, Some(n)) => Some((total.saturating_sub(n), total.saturating_sub(1))),
+            _ => None,
+        }
+    });
+    match parsed {
+        Some((start, end)) if total > 0 && start <= end && start < total => {
+            let end = end.min(start + MAX_CHUNK - 1);
+            let mut body = vec![0u8; (end - start + 1) as usize];
+            f.seek(SeekFrom::Start(start))?;
+            f.read_exact(&mut body)?;
+            Ok(Served { status: 206, mime, start, end, total, body })
+        }
+        Some(_) => bail!("range not satisfiable"),
+        None => {
+            let mut body = Vec::with_capacity(total as usize);
+            f.read_to_end(&mut body)?;
+            Ok(Served { status: 200, mime, start: 0, end: total.saturating_sub(1), total, body })
+        }
+    }
+}
+
+#[cfg(test)]
+mod serve_tests {
+    use super::*;
+
+    #[test]
+    fn ranges() {
+        let path = std::env::temp_dir().join(format!("ripple-serve-{}.mp4", random_hex(4)));
+        std::fs::write(&path, (0..=255u8).collect::<Vec<_>>()).unwrap();
+        let all = serve(&path, None).unwrap();
+        assert_eq!((all.status, all.body.len(), all.mime), (200, 256, "video/mp4"));
+        let mid = serve(&path, Some("bytes=10-19")).unwrap();
+        assert_eq!((mid.status, mid.start, mid.end, mid.total), (206, 10, 19, 256));
+        assert_eq!(mid.body, (10..=19u8).collect::<Vec<_>>());
+        let tail = serve(&path, Some("bytes=250-")).unwrap();
+        assert_eq!((tail.start, tail.end, tail.body.len()), (250, 255, 6));
+        let suffix = serve(&path, Some("bytes=-4")).unwrap();
+        assert_eq!(suffix.body, vec![252, 253, 254, 255]);
+        assert!(serve(&path, Some("bytes=900-")).is_err());
+        assert_eq!(serve(&path, Some("garbage")).unwrap().status, 200);
+        std::fs::remove_file(path).ok();
+    }
+}
