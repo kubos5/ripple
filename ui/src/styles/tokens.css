@@ -1,0 +1,144 @@
+/* Ripple design tokens. Everything visual derives from these. */
+
+:root {
+  --font-ui: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", var(--font-ui);
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --scale: 1;
+  --fs-11: calc(11px * var(--scale));
+  --fs-12: calc(12px * var(--scale));
+  --fs-13: calc(13px * var(--scale));
+  --fs-14: calc(14px * var(--scale));
+  --fs-15: calc(15px * var(--scale));
+  --fs-17: calc(17px * var(--scale));
+  --fs-20: calc(20px * var(--scale));
+  --fs-28: calc(28px * var(--scale));
+
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* Motion: short, ease-out for entrances, faster exits, springs for things the user drives. */
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --t-slow: 240ms;
+  --t-slower: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --spring: linear(0, 0.061, 0.199, 0.364, 0.524 17%, 0.665, 0.779, 0.866, 0.929 33%, 0.971, 0.997, 1.012, 1.018 50%, 1.02, 1.019, 1.016, 1.013 67%, 1.009, 1.007, 1.004, 1.003 83%, 1.001, 1.001, 1, 1);
+  --spring-bouncy: linear(0, 0.079, 0.266, 0.495, 0.719 14%, 0.907, 1.042, 1.124, 1.16 29%, 1.159, 1.135, 1.1, 1.062 43%, 1.028, 1.002, 0.985, 0.976 57%, 0.973, 0.976, 0.981, 0.987 71%, 0.993, 0.998, 1.001, 1.003 86%, 1.004, 1.004, 1.004, 1);
+
+  --rail-w: 64px;
+  --header-h: 60px;
+  --row-h: 72px;
+}
+
+/* ───────────── dark ───────────── */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121314;
+  --bg-side: #151617;
+  --bg-rail: #0e0f10;
+  --surface-1: #1b1c1e;
+  --surface-2: #232427;
+  --surface-3: #2c2d31;
+  --overlay: #1e1f22;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --text: #ecedee;
+  --text-2: #a3a6ab;
+  --text-3: #6f7379;
+  --scrim: rgba(0, 0, 0, 0.56);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 12px 36px -6px rgba(0, 0, 0, 0.6), 0 3px 10px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 6px 20px -4px rgba(0, 0, 0, 0.5);
+
+  --accent: #3ee0b5;
+  --accent-strong: #62e9c5;
+  --accent-ink: #04261d;
+  --danger: #ff6b5e;
+  --warn: #ffb84d;
+
+  --bubble-in: #1e1f22;
+  --bubble-out-mix: 21%;
+
+  --tone-0: #ff8a7a;
+  --tone-1: #ffb454;
+  --tone-2: #e2cf5c;
+  --tone-3: #7fd98b;
+  --tone-4: #4fd6c4;
+  --tone-5: #6cb8ff;
+  --tone-6: #a9a1ff;
+  --tone-7: #f28bc8;
+  --tone-mix: 20%;
+}
+
+/* ───────────── light ───────────── */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-side: #fbfbfa;
+  --bg-rail: #f4f4f2;
+  --surface-1: #f4f4f2;
+  --surface-2: #ececea;
+  --surface-3: #e2e2df;
+  --overlay: #ffffff;
+  --line: rgba(20, 22, 26, 0.08);
+  --line-strong: rgba(20, 22, 26, 0.15);
+  --text: #17181a;
+  --text-2: #5d6065;
+  --text-3: #8b8f95;
+  --scrim: rgba(24, 26, 30, 0.32);
+  --shadow-pop: 0 0 0 1px rgba(20, 22, 26, 0.08), 0 14px 40px -8px rgba(20, 22, 26, 0.22), 0 3px 10px rgba(20, 22, 26, 0.07);
+  --shadow-float: 0 0 0 1px rgba(20, 22, 26, 0.07), 0 6px 20px -6px rgba(20, 22, 26, 0.16);
+
+  --accent: #0a8f72;
+  --accent-strong: #077a61;
+  --accent-ink: #ffffff;
+  --danger: #d43d2f;
+  --warn: #b56a00;
+
+  --bubble-in: #f3f3f1;
+  --bubble-out-mix: 15%;
+
+  --tone-0: #c8402e;
+  --tone-1: #a86400;
+  --tone-2: #7a6c00;
+  --tone-3: #1f8a3b;
+  --tone-4: #0b8073;
+  --tone-5: #1769c2;
+  --tone-6: #5b50d6;
+  --tone-7: #b8388a;
+  --tone-mix: 13%;
+}
+
+/* ───────────── accent presets ───────────── */
+:root[data-accent="coral"] { --accent: #ff8363; --accent-strong: #ff9b80; --accent-ink: #3a0f05; }
+:root[data-accent="amber"] { --accent: #ffb938; --accent-strong: #ffc85e; --accent-ink: #3a2400; }
+:root[data-accent="sky"] { --accent: #5cc4ff; --accent-strong: #84d3ff; --accent-ink: #032a42; }
+:root[data-accent="rose"] { --accent: #ff7eb6; --accent-strong: #ff9cc7; --accent-ink: #3d0a22; }
+:root[data-accent="graphite"] { --accent: #e4e5e7; --accent-strong: #ffffff; --accent-ink: #17181a; }
+:root[data-theme="light"][data-accent="coral"] { --accent: #d9482b; --accent-strong: #bf3b20; --accent-ink: #ffffff; }
+:root[data-theme="light"][data-accent="amber"] { --accent: #b86e00; --accent-strong: #9c5d00; --accent-ink: #ffffff; }
+:root[data-theme="light"][data-accent="sky"] { --accent: #0b76c2; --accent-strong: #0865a8; --accent-ink: #ffffff; }
+:root[data-theme="light"][data-accent="rose"] { --accent: #cf2f76; --accent-strong: #b52364; --accent-ink: #ffffff; }
+:root[data-theme="light"][data-accent="graphite"] { --accent: #2a2b2e; --accent-strong: #17181a; --accent-ink: #ffffff; }
+
+:root {
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-softer: color-mix(in oklab, var(--accent) 8%, transparent);
+  --bubble-out: color-mix(in oklab, var(--accent) var(--bubble-out-mix), var(--bg));
+  --bubble-out-line: color-mix(in oklab, var(--accent) 34%, transparent);
+  --danger-soft: color-mix(in oklab, var(--danger) 13%, transparent);
+}
+
+:root[data-density="compact"] {
+  --row-h: 60px;
+  --header-h: 54px;
+}

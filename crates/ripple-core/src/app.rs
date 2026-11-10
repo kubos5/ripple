@@ -252,8 +252,9 @@ impl App {
         let mentioned = m.mentions.iter().any(|j| *j == me) || m.quote.as_ref().is_some_and(|q| q.sender == me);
         let chat = self.chat_mut(&m.chat, |c| {
             if c.last.as_ref().is_none_or(|l| l.ts <= m.ts) {
+                // A chat with no messages yet sorts by its creation time; once it has one, by that.
+                c.ts = if c.last.is_none() { m.ts } else { c.ts.max(m.ts) };
                 c.last = Some(m.preview());
-                c.ts = c.ts.max(m.ts);
             }
             if counts && !viewing {
                 c.unread += 1;
@@ -298,8 +299,8 @@ impl App {
         for (chat, m) in newest {
             self.chat_mut(chat, |c| {
                 if c.last.as_ref().is_none_or(|l| l.ts <= m.ts) {
+                    c.ts = if c.last.is_none() { m.ts } else { c.ts.max(m.ts) };
                     c.last = Some(m.preview());
-                    c.ts = c.ts.max(m.ts);
                 }
             });
             self.emit(UiEvent::History { chat: chat.to_string() });
