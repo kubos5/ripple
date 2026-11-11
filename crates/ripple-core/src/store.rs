@@ -115,6 +115,18 @@ impl Store {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Removes every row (used when the account is unlinked). Settings survive.
+    pub fn wipe(&self) -> Result<()> {
+        self.db().execute_batch(
+            "BEGIN;
+             DELETE FROM fts; DELETE FROM messages; DELETE FROM chats; DELETE FROM contacts;
+             DELETE FROM groups; DELETE FROM receipts; DELETE FROM media; DELETE FROM stickers;
+             DELETE FROM meta WHERE key <> 'settings';
+             COMMIT; VACUUM;",
+        )?;
+        Ok(())
+    }
+
     // ───────────── meta ─────────────
 
     pub fn meta<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
@@ -764,6 +776,20 @@ mod tests {
 
         s.delete_chat("a").unwrap();
         assert!(s.chat("a").is_none());
+    }
+
+    #[test]
+    fn wipe_keeps_only_settings() {
+        let s = Store::memory().unwrap();
+        s.insert_message(&mut msg("a", "1", 10, "secret plans")).unwrap();
+        s.put_chat(&Chat { id: "a".into(), ..Default::default() }).unwrap();
+        s.set_meta("settings", &Settings { accent: "coral".into(), ..Default::default() }).unwrap();
+        s.set_meta("me", &"1@s.whatsapp.net").unwrap();
+        s.wipe().unwrap();
+        assert_eq!(s.message_count(), 0);
+        assert!(s.chats().is_empty() && s.search("secret", None, 5).is_empty());
+        assert!(s.meta::<String>("me").is_none());
+        assert_eq!(s.meta::<Settings>("settings").unwrap().accent, "coral");
     }
 
     #[test]

@@ -236,7 +236,17 @@ impl App {
 
     /// Stores a message that arrived (or that we just composed) and updates
     /// the chat row. `fresh` is false for history. Returns `None` for duplicates.
-    pub fn ingest_message(self: &Arc<Self>, mut m: Message, fresh: bool) -> Option<Message> {
+    pub fn ingest_message(self: &Arc<Self>, m: Message, fresh: bool) -> Option<Message> {
+        self.ingest(m, fresh, fresh)
+    }
+
+    /// A message that arrived while we were offline: it counts as unread, but
+    /// raises no notification and does not animate in.
+    pub fn ingest_offline(self: &Arc<Self>, m: Message) -> Option<Message> {
+        self.ingest(m, true, false)
+    }
+
+    fn ingest(self: &Arc<Self>, mut m: Message, fresh: bool, live: bool) -> Option<Message> {
         self.ensure_chat(&m.chat);
         match self.store.insert_message(&mut m) {
             Ok(true) => {}
@@ -269,11 +279,11 @@ impl App {
                 c.draft = None;
             }
         });
-        self.emit(UiEvent::Message { message: m.clone(), fresh });
+        self.emit(UiEvent::Message { message: m.clone(), fresh: live });
         if counts {
             if viewing {
                 self.send_read_receipts(&m.chat, vec![m.clone()]);
-            } else if let Some(chat) = chat {
+            } else if let (true, Some(chat)) = (live, chat) {
                 self.notify(&chat, &m, mentioned);
             }
         }

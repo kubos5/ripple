@@ -85,10 +85,41 @@ impl Ripple {
         Ok(())
     }
 
+    /// Unlinks the account's local data and starts again from the welcome screen.
+    async fn reset_live(&self) -> Result<()> {
+        let old = self.app();
+        old.net().shutdown().await;
+        if !old.demo {
+            let _ = old.store.wipe();
+            let _ = std::fs::remove_dir_all(old.media.root());
+        }
+        let app = Self::build(&self.data_dir, &self.events, false).await?;
+        *self.app.write().unwrap_or_else(|e| e.into_inner()) = app;
+        let _ = self.events.send(UiEvent::Reset);
+        Ok(())
+    }
+
     pub async fn handle(&self, req: Request) -> Result<Value> {
         match req {
             Request::DemoStart => self.switch(true).await.map(|_| Value::Null),
             Request::DemoExit => self.switch(false).await.map(|_| Value::Null),
+            Request::Logout => {
+                let app = self.app();
+                if app.demo {
+                    return self.switch(false).await.map(|_| Value::Null);
+                }
+                if let Err(e) = app.handle(Request::Logout).await {
+                    log::warn!("logout request failed: {e:#}");
+                }
+                self.reset_live().await.map(|_| Value::Null)
+            }
+            Request::Pair { phone } => {
+                // After a remote unlink the old account's chats are still on disk; clear them first.
+                if matches!(self.app().session(), model::Session::LoggedOut { .. }) {
+                    self.reset_live().await?;
+                }
+                self.app().handle(Request::Pair { phone }).await
+            }
             other => self.app().handle(other).await,
         }
     }
