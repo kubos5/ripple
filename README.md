@@ -108,6 +108,34 @@ cargo test -p ripple-core -p ripple-bridge
 cd ui && npm run typecheck && npm test
 ```
 
+## Performance
+
+Measured on an Apple Silicon Mac with the release build (November 2026):
+
+| | |
+|---|---|
+| Installer (`.dmg`) | 12 MB |
+| Cold start to a visible window | about 0.45 s |
+| Memory, demo data loaded | 33 MB for Ripple itself, about 115 MB including the system webview's helper processes |
+| CPU when idle | 0% |
+| Open a chat with 50,000 messages | about 60 ms |
+| Load an older page of messages | 25–40 ms in the UI, under 1 ms in the database |
+| Search 52,000 messages | 10–30 ms |
+
+Chat and message lists are virtualised, so only what is on screen is rendered
+(about 30 message rows and a dozen chat rows, however large the history).
+
+## Known limitations
+
+- Windows and Linux builds are produced by CI but have not been run by hand yet.
+- Live WhatsApp behaviour depends on `whatsapp-rust`, which is pre-1.0; expect
+  occasional breakage when WhatsApp changes its protocol.
+- Votes on polls that arrive through history sync (sent before you linked) are
+  not shown; votes cast afterwards are.
+- GIF files are sent as documents (WhatsApp GIFs are short MP4 videos, and
+  Ripple does not transcode video).
+- Videos are sent as they are; there is no compression step.
+
 ## Where your data lives
 
 Everything stays on your computer, in the app data directory
