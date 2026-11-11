@@ -50,30 +50,25 @@ export function Avatar(props: { id: string; size?: number; name?: string; src?: 
     token();
     setBroken(false);
   });
-  const body = (
-    <div
-      class={`avatar ${kind() === "person" ? "" : kind()}`}
-      style={{ "--size": `${props.size ?? 44}px`, "--tone": `var(--tone-${tone(props.id)})` }}
-    >
-      <Show
-        when={token() && !broken()}
-        fallback={
-          <Show when={kind() === "person"} fallback={<Icon name={kind() === "community" ? "users-three-fill" : "users-fill"} />}>
-            <span>{initials(label().replace(/^~/, ""))}</span>
-          </Show>
-        }
-      >
-        <img src={mediaUrl(token())} alt="" draggable={false} loading="lazy" onError={() => setBroken(true)} />
-      </Show>
-    </div>
-  );
   return (
-    <Show when={props.online} fallback={body}>
-      <div class="avatar-wrap">
-        {body}
-        <span class="online" />
+    <div class="avatar-wrap">
+      <div
+        class={`avatar ${kind() === "person" ? "" : kind()}`}
+        style={{ "--size": `${props.size ?? 44}px`, "--tone": `var(--tone-${tone(props.id)})` }}
+      >
+        <Show
+          when={token() && !broken()}
+          fallback={
+            <Show when={kind() === "person"} fallback={<Icon name={kind() === "community" ? "users-three-fill" : "users-fill"} />}>
+              <span>{initials(label().replace(/^~/, ""))}</span>
+            </Show>
+          }
+        >
+          <img src={mediaUrl(token())} alt="" draggable={false} loading="lazy" onError={() => setBroken(true)} />
+        </Show>
       </div>
-    </Show>
+      <Show when={props.online}><span class="online" /></Show>
+    </div>
   );
 }
 

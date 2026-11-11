@@ -218,12 +218,13 @@ function MessageList(props: { chat: Chat }) {
     return { items, flags, albums };
   });
 
-  const toBottom = (smooth = false) => {
+  // Instant on purpose: the new bubble's own entrance supplies the motion, and
+  // smooth-scrolling a virtualised list can briefly show unrendered rows.
+  const toBottom = () => {
     const n = layout().items.length;
     if (!handle || !n) return;
-    handle.scrollToIndex(n - 1, { align: "end", smooth });
-    // Trailing content (typing row, padding) sits after the virtualizer.
-    requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+    handle.scrollToIndex(n - 1, { align: "end" });
+    scroller.scrollTop = scroller.scrollHeight;
   };
 
   onMount(() => {
@@ -251,7 +252,7 @@ function MessageList(props: { chat: Chat }) {
     const tail = state.convo.messages[len - 1];
     const appended = len > lastLen && tail && tail.id !== lastId;
     if (appended) {
-      if (pinned) queueMicrotask(() => toBottom(true));
+      if (pinned) queueMicrotask(toBottom);
       else if (!tail.fromMe) setBelow((n) => n + 1);
     }
     lastLen = len;
@@ -262,8 +263,8 @@ function MessageList(props: { chat: Chat }) {
     pinned = true;
     setAtBottom(true);
     setBelow(0);
-    queueMicrotask(() => toBottom(true));
-    requestAnimationFrame(() => toBottom());
+    queueMicrotask(toBottom);
+    requestAnimationFrame(toBottom);
   }, { defer: true }));
 
   createEffect(on(jumpSignal, (j) => {

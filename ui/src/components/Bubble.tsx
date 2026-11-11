@@ -5,7 +5,7 @@ import { inTauri, mediaUrl } from "../lib/ipc";
 import { clock, duration, ephemeralLabel, fileSize, fullStamp, phone, plural, tone } from "../lib/format";
 import { type Block, type Inline, jumboEmoji, parse } from "../lib/rich";
 import {
-  act, contactName, freshIds, isAdmin, jumpToMessage, openModal, setState, startChat, state, toast, toggleSelect,
+  act, contactName, freshIds, isAdmin, jumpToMessage, openModal, previewText, setState, startChat, state, toast, toggleSelect,
 } from "../lib/state";
 import type { Content, ContentOf, Media, Message, Quote, Reaction } from "../lib/types";
 import { KIND_ICON, Ticks, bumpStars } from "./Sidebar";
@@ -543,7 +543,8 @@ export function react(m: Message, emoji: string) {
 
 export function openReactBar(at: HTMLElement | MouseEvent, m: Message) {
   const mine = m.reactions.find((r) => r.sender === state.me?.id)?.emoji;
-  const align = m.fromMe ? "right" : "left";
+  // The action buttons sit on the far side of the bubble, so open back over it.
+  const align = m.fromMe ? "left" : "right";
   // Remember where the bar opened so the full picker can replace it in place.
   const anchor = at instanceof HTMLElement ? at : ({ clientX: at.clientX, clientY: at.clientY, preventDefault() {} } as MouseEvent);
   openMenu(at, [], {
@@ -643,7 +644,7 @@ function QuoteBox(props: { q: Quote }) {
         <div class="q-name truncate">{contactName(props.q.sender).replace(/^~/, "")}</div>
         <div class="q-text">
           <Show when={KIND_ICON[props.q.kind]}>{(i) => <Icon name={i()} />}</Show>
-          {props.q.text}
+          {previewText(props.q.text)}
         </div>
       </div>
       <Show when={thumbUrl(props.q.thumb)}>{(t) => <img src={t()} alt="" draggable={false} />}</Show>
