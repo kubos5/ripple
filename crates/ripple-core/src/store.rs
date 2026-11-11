@@ -504,18 +504,23 @@ impl Store {
     /// Full-text search, newest first. Every word must match; the last word matches as a prefix.
     pub fn search(&self, query: &str, chat: Option<&str>, limit: usize) -> Vec<Message> {
         let Some(q) = fts_query(query) else { return vec![] };
-        match chat {
+        // Walking the index by descending rowid lets SQLite stop after `limit`
+        // hits instead of sorting every match; rowids follow arrival order, so
+        // a final sort by timestamp only has to fix up back-filled history.
+        let mut hits = match chat {
             Some(c) => self.query_msgs(
                 "SELECT m.seq,m.data FROM fts JOIN messages m ON m.seq=fts.rowid
-                 WHERE fts MATCH ?1 AND m.chat=?2 ORDER BY m.ts DESC LIMIT ?3",
+                 WHERE fts MATCH ?1 AND m.chat=?2 ORDER BY fts.rowid DESC LIMIT ?3",
                 &[&q, &c, &(limit as i64)],
             ),
             None => self.query_msgs(
                 "SELECT m.seq,m.data FROM fts JOIN messages m ON m.seq=fts.rowid
-                 WHERE fts MATCH ?1 ORDER BY m.ts DESC LIMIT ?2",
+                 WHERE fts MATCH ?1 ORDER BY fts.rowid DESC LIMIT ?2",
                 &[&q, &(limit as i64)],
             ),
-        }
+        };
+        hits.sort_by_key(|m| std::cmp::Reverse((m.ts, m.seq)));
+        hits
     }
 
     /// Outgoing messages that never left (resent after reconnecting).
