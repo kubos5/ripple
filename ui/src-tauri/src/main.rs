@@ -182,11 +182,11 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && CLOSE_TO_TRAY.load(Ordering::Relaxed)
+            {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .build(tauri::generate_context!())
