@@ -7,6 +7,8 @@
 mod convert;
 mod events;
 mod ops;
+#[cfg(test)]
+mod tests;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};

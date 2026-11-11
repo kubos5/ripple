@@ -46,6 +46,21 @@ fn blank(id: String, chat: String, sender: String, from_me: bool, ts: i64, conte
     }
 }
 
+/// A decrypted message with its addresses already mapped to Ripple's ids.
+pub(crate) struct Incoming {
+    pub id: String,
+    pub chat: String,
+    pub sender: String,
+    /// The sender exactly as addressed on the wire (LID or phone number).
+    pub sender_raw: String,
+    pub sender_alt: Option<String>,
+    pub from_me: bool,
+    pub ts: i64,
+    pub push_name: String,
+    pub timer: Option<u32>,
+    pub live: bool,
+}
+
 impl Inner {
     pub(crate) async fn on_event(self: &Arc<Self>, ev: Arc<Event>, client: Arc<Client>) {
         let Some(app) = self.app() else { return };
@@ -444,11 +459,9 @@ impl Inner {
 
     async fn on_message(self: &Arc<Self>, app: &Arc<App>, client: &Arc<Client>, msg: &wa::Message, info: &MessageInfo, live: bool) {
         let src = &info.source;
-        let raw_chat = jid_str(&src.chat);
-        if !is_chat(&raw_chat) {
+        if !is_chat(&jid_str(&src.chat)) {
             return; // status updates, channels, broadcasts
         }
-        let me = app.me();
         let chat_alt = if src.is_group {
             None
         } else if src.is_from_me {
@@ -457,38 +470,59 @@ impl Inner {
             src.sender_alt.as_ref()
         };
         let chat = self.resolve(client, &src.chat, chat_alt).await;
-        let sender = if src.is_from_me { me.clone() } else { self.resolve(client, &src.sender, src.sender_alt.as_ref()).await };
-        let ts = info.timestamp.timestamp_millis();
+        let sender = if src.is_from_me { app.me() } else { self.resolve(client, &src.sender, src.sender_alt.as_ref()).await };
+        self.apply_message(
+            app,
+            msg,
+            Incoming {
+                id: info.id.clone(),
+                chat,
+                sender,
+                sender_raw: jid_str(&src.sender),
+                sender_alt: src.sender_alt.as_ref().map(jid_str),
+                from_me: src.is_from_me,
+                ts: info.timestamp.timestamp_millis(),
+                push_name: info.push_name.clone(),
+                timer: info.ephemeral_expiration,
+                live,
+            },
+        );
+    }
+
+    /// Applies one decrypted message whose addresses are already resolved.
+    pub(crate) fn apply_message(&self, app: &Arc<App>, msg: &wa::Message, i: Incoming) {
+        let Incoming { chat, sender, ts, .. } = &i;
+        let (chat, sender, ts) = (chat.as_str(), sender.as_str(), *ts);
         let parsed = convert::parse(msg);
 
-        if !src.is_from_me && !info.push_name.is_empty() {
-            let known = app.store.contact(&sender).and_then(|c| c.push_name);
-            if known.as_deref() != Some(info.push_name.as_str()) {
-                let name = info.push_name.clone();
-                app.ingest_contact(&sender, |c| c.push_name = Some(name));
+        if !i.from_me && !i.push_name.is_empty() {
+            let known = app.store.contact(sender).and_then(|c| c.push_name);
+            if known.as_deref() != Some(i.push_name.as_str()) {
+                let name = i.push_name.clone();
+                app.ingest_contact(sender, |c| c.push_name = Some(name));
             }
         }
 
         match parsed.special {
             Special::Skip => return,
-            Special::Reaction { target, emoji } => return app.ingest_reaction(&chat, &target, &sender, &emoji, ts),
-            Special::Revoke { target } => return app.ingest_revoke(&chat, &target),
-            Special::Edit { target, text } => return app.ingest_edit(&chat, &target, &text, ts),
+            Special::Reaction { target, emoji } => return app.ingest_reaction(chat, &target, sender, &emoji, ts),
+            Special::Revoke { target } => return app.ingest_revoke(chat, &target),
+            Special::Edit { target, text } => return app.ingest_edit(chat, &target, &text, ts),
             Special::Pin { target, on } => {
                 let secs = msg.message_context_info.as_option().and_then(|c| c.message_add_on_duration_in_secs).unwrap_or(7 * 86_400);
-                return app.ingest_pin(&chat, &target, if on { ts + secs as i64 * 1000 } else { 0 }, &sender);
+                return app.ingest_pin(chat, &target, if on { ts + secs as i64 * 1000 } else { 0 }, sender);
             }
-            Special::Ephemeral { secs } => return app.ingest_ephemeral(&chat, secs, &sender),
+            Special::Ephemeral { secs } => return app.ingest_ephemeral(chat, secs, sender),
             Special::PollVote { poll, payload, iv } => {
-                return self.on_poll_vote(app, &chat, &poll, &sender, &jid_str(&src.sender), src.sender_alt.as_ref().map(jid_str), &payload, &iv);
+                return self.on_poll_vote(app, chat, &poll, sender, &i.sender_raw, i.sender_alt.clone(), &payload, &iv);
             }
             Special::EventResponse { event, payload, iv } => {
-                return self.on_event_response(app, &chat, &event, &sender, &jid_str(&src.sender), src.sender_alt.as_ref().map(jid_str), &payload, &iv);
+                return self.on_event_response(app, chat, &event, sender, &i.sender_raw, i.sender_alt.clone(), &payload, &iv);
             }
             Special::None => {}
         }
         let Some(content) = parsed.content else { return };
-        let mut m = blank(info.id.clone(), chat.clone(), sender, src.is_from_me, ts, content);
+        let mut m = blank(i.id.clone(), chat.to_string(), sender.to_string(), i.from_me, ts, content);
         m.quote = parsed.quote.map(|mut q| {
             q.sender = self.canon_s(&q.sender);
             q
@@ -497,20 +531,24 @@ impl Inner {
         m.forwarded = parsed.forwarded;
         m.view_once = parsed.view_once;
         m.album = parsed.album;
-        let timer = info.ephemeral_expiration.unwrap_or(parsed.expiration);
+        let timer = i.timer.unwrap_or(parsed.expiration);
         if timer > 0 {
             m.expires = ts + timer as i64 * 1000;
         }
         if convert::needs_raw(&m.content) {
             let mut stored = Stored::of(msg, parsed.secret.as_deref());
-            stored.sender = jid_str(&src.sender);
-            let _ = app.store.set_media_params(&chat, &m.id, &stored);
+            stored.sender = i.sender_raw.clone();
+            let _ = app.store.set_media_params(chat, &m.id, &stored);
         }
-        if let Some(c) = app.chat(&chat)
-            && c.ephemeral != timer && timer > 0 && c.kind == ChatKind::Direct {
-                app.chat_mut(&chat, |c| c.ephemeral = timer);
-            }
-        if live { app.ingest_message(m, true) } else { app.ingest_offline(m) };
+        if i.live {
+            app.ingest_message(m, true);
+        } else {
+            app.ingest_offline(m);
+        }
+        // After ingesting, so a chat created by this very message picks the timer up too.
+        if timer > 0 && app.chat(chat).is_some_and(|c| c.ephemeral != timer && c.kind == ChatKind::Direct) {
+            app.chat_mut(chat, |c| c.ephemeral = timer);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -578,7 +616,11 @@ impl Inner {
 
     /// Stores one history chunk. Returns the sync progress (0–100) if the chunk reported one.
     fn on_history(&self, app: &Arc<App>, h: &whatsapp_rust::wacore::types::events::LazyHistorySync) -> Option<u32> {
-        let hs = h.get()?;
+        self.apply_history(app, h.get()?)
+    }
+
+    /// Stores a decoded history chunk: address mappings, names, messages and chat state.
+    pub(crate) fn apply_history(&self, app: &Arc<App>, hs: &wa::HistorySync) -> Option<u32> {
         let me = app.me();
         for map in &hs.phone_number_to_lid_mappings {
             if let (Some(pn), Some(lid)) = (&map.pn_jid, &map.lid_jid) {

@@ -99,7 +99,9 @@ function Pairing(props: { qr: string | null; code: string | null; expires: numbe
           </>
         )}
       </Show>
-      <button class="btn ghost block" onClick={() => void act(state.demo ? "demoTrigger" : "logout", state.demo ? { what: "offline" } : {})} style={{ display: state.demo ? "none" : undefined }}>Cancel</button>
+      <Show when={!state.demo}>
+        <button class="btn ghost block" onClick={() => void act("logout")}>Cancel</button>
+      </Show>
       <p class="fineprint" style={{ "text-align": "center" }}>Keep this window open until linking finishes.</p>
     </div>
   );
