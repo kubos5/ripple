@@ -6,10 +6,40 @@ import { act, send, toast } from "../lib/state";
 import type { Attachment, Sticker } from "../lib/types";
 import { Icon, type IconName, openMenu } from "./ui";
 
-type Row = [emoji: string, name: string, tags: string, group: number, skins?: string[]];
+type Row = [emoji: string, name: string, tags: string, group: number, version: number, skins?: string[]];
+
+/**
+ * The newest emoji version this system's font can draw. Unsupported emoji
+ * render as an empty box, so the picker leaves them out. Each probe is a
+ * colourful emoji introduced in that version: if it paints any colour, the
+ * font has it.
+ */
+function supportedEmojiVersion(): number {
+  const probes: [number, string][] = [[18, "🫫"], [17, "🫪"], [16, "🫩"], [15, "🫨"], [14, "🫠"], [13, "🥲"]];
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 24;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.textBaseline = "top";
+    ctx.font = '18px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    for (const [version, emoji] of probes) {
+      ctx.clearRect(0, 0, 24, 24);
+      ctx.fillText(emoji, 0, 2);
+      const px = ctx.getImageData(0, 0, 24, 24).data;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] > 40 && (Math.abs(px[i] - px[i + 1]) > 24 || Math.abs(px[i + 1] - px[i + 2]) > 24)) return version;
+      }
+    }
+  } catch { /* canvas unavailable: assume a reasonably recent font */ }
+  return 12;
+}
 
 let cache: Promise<Row[]> | null = null;
-const loadEmoji = () => (cache ??= import("../assets/emoji.json").then((m) => m.default as unknown as Row[]));
+const loadEmoji = () =>
+  (cache ??= import("../assets/emoji.json").then((m) => {
+    const max = supportedEmojiVersion();
+    return (m.default as unknown as Row[]).filter((r) => r[4] <= max + 0.9);
+  }));
 
 const GROUPS: { id: number; label: string; icon: IconName }[] = [
   { id: 0, label: "Smileys & emotion", icon: "smiley" },
@@ -45,7 +75,7 @@ export function EmojiPicker(props: { onPick: (emoji: string) => void; autofocus?
   let input: HTMLInputElement | undefined;
   onMount(() => props.autofocus && setTimeout(() => input?.focus(), 40));
 
-  const tone = (r: Row) => (skin() > 0 && r[4] ? r[4][skin() - 1] : r[0]);
+  const tone = (r: Row) => (skin() > 0 && r[5] ? r[5][skin() - 1] : r[0]);
   const found = createMemo(() => {
     const q = query().trim().toLowerCase();
     if (!q) return null;

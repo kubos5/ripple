@@ -63,6 +63,10 @@
   min-width: 0;
 }
 @keyframes panel-in { from { margin-right: -384px; opacity: 0.4; } }
+/* On narrow windows the panel floats over the conversation instead of squeezing it. */
+@media (max-width: 1040px) {
+  .panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 30; box-shadow: var(--shadow-pop); animation-name: slide-in-right; }
+}
 .panel-head { display: flex; align-items: center; gap: 6px; height: var(--header-h); padding: 0 12px 0 10px; flex: none; border-bottom: 1px solid var(--line); }
 .panel-head h2 { flex: 1; font-size: var(--fs-15); font-weight: 640; padding-left: 4px; }
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; }

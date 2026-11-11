@@ -136,7 +136,11 @@ export function MenuHost() {
     let left = m.align === "right" ? m.x - w : m.x;
     let top = m.y;
     let ox = m.align === "right" ? "right" : "left", oy = "top";
-    if (left + w > innerWidth - pad) { left = Math.max(pad, m.x - w); ox = "right"; }
+    if (left + w > innerWidth - pad) {
+      // Anchored menus slide back into view; pointer menus flip to the other side of the cursor.
+      left = m.align ? Math.max(pad, innerWidth - pad - w) : Math.max(pad, m.x - w);
+      ox = "right";
+    }
     if (left < pad) left = pad;
     if (top + h > innerHeight - pad) { top = Math.max(pad, m.y - h - (m.align ? 44 : 0)); oy = "bottom"; }
     setPos({ left, top, ox, oy });

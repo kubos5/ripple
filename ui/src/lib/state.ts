@@ -160,6 +160,26 @@ export function previewText(text: string) {
   return plain(text, mentionName);
 }
 
+/** One-line description of a message, for search results, pins and reply bars. */
+export function messageLabel(m: Message): string {
+  const c = m.content;
+  switch (c.type) {
+    case "text": return previewText(c.text);
+    case "image": return c.caption ? previewText(c.caption) : "Photo";
+    case "video": return c.caption ? previewText(c.caption) : c.gif ? "GIF" : "Video";
+    case "document": return c.caption ? previewText(c.caption) : c.name;
+    case "audio": return c.voice ? "Voice message" : "Audio";
+    case "sticker": return "Sticker";
+    case "location": return c.name || (c.live ? "Live location" : "Location");
+    case "contacts": return c.cards.length === 1 ? c.cards[0].name : `${c.cards.length} contacts`;
+    case "poll": return c.question;
+    case "event": return c.name;
+    case "call": return c.missed ? "Missed call" : "Call";
+    case "deleted": return "This message was deleted";
+    default: return "Message";
+  }
+}
+
 export function isMuted(chat: Chat) {
   return chat.mutedUntil === -1 || chat.mutedUntil > state.now;
 }

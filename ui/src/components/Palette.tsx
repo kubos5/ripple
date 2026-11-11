@@ -5,7 +5,7 @@ import { Portal } from "solid-js/web";
 import { call } from "../lib/ipc";
 import { debounce, listTime, phone } from "../lib/format";
 import {
-  act, chatName, closeModal, contactName, derived, openChat, openModal, previewText, revealMessage, setState, startChat,
+  act, chatName, closeModal, contactName, derived, messageLabel, openChat, openModal, previewText, revealMessage, setState, startChat,
   state, updateSettings,
 } from "../lib/state";
 import type { Message } from "../lib/types";
@@ -91,10 +91,9 @@ export function Palette() {
     }
     out.push(...actions().filter((a) => !s || a.title.toLowerCase().includes(s)));
     for (const m of (s.length >= 2 ? hits() ?? [] : []).slice(0, 12)) {
-      const text = m.content.type === "text" ? m.content.text : "caption" in m.content ? m.content.caption : "";
       out.push({
         key: `m-${m.chat}-${m.id}`, section: "Messages", title: chatName(m.chat), avatar: m.chat,
-        sub: `${contactName(m.sender, { short: true })}: ${previewText(text)}`, hint: listTime(m.ts, state.now),
+        sub: `${contactName(m.sender, { short: true }).replace(/^~/, "")}: ${messageLabel(m)}`, hint: listTime(m.ts, state.now),
         run: go(() => void revealMessage(m)),
       });
     }

@@ -117,17 +117,20 @@ export function tone(id: string) {
   return h % 8;
 }
 
+const CC2 = new Set([
+  20, 27, 30, 31, 32, 33, 34, 36, 39, 40, 41, 43, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56, 57, 58, 60, 61, 62,
+  63, 64, 65, 66, 81, 82, 84, 86, 90, 91, 92, 93, 94, 95, 98,
+]);
+
 /** "15551234567@s.whatsapp.net" → "+1 555 123 4567" */
 export function phone(jid: string) {
   const user = jid.split("@")[0].split(":")[0];
   if (!/^\d{6,}$/.test(user) || jid.endsWith("@lid")) return user;
-  if (user.startsWith("1") && user.length === 11) {
-    return `+1 ${user.slice(1, 4)} ${user.slice(4, 7)} ${user.slice(7)}`;
-  }
-  const cc = user.length > 11 ? 3 : 2;
+  // Country calling codes are 1 digit (1, 7), 2 digits (the common ones above) or 3.
+  const cc = user[0] === "1" || user[0] === "7" ? 1 : CC2.has(Number(user.slice(0, 2))) ? 2 : 3;
   const rest = user.slice(cc);
-  const groups = rest.match(/.{1,4}/g) ?? [rest];
-  return `+${user.slice(0, cc)} ${groups.join(" ")}`;
+  const groups = rest.length <= 7 ? [rest.slice(0, 3), rest.slice(3)] : [rest.slice(0, 3), rest.slice(3, 6), rest.slice(6)];
+  return `+${user.slice(0, cc)} ${groups.filter(Boolean).join(" ")}`;
 }
 
 export function userPart(jid: string) {
