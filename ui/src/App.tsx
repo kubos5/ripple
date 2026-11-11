@@ -69,10 +69,40 @@ function useShortcuts() {
   onCleanup(() => window.removeEventListener("keydown", onKey));
 }
 
+/** Desktop-shell behaviour: window dragging from header areas and opening links in the browser. */
+function useShell() {
+  if (!inTauri) return;
+  const interactive = "button, a, input, textarea, select, [role='button'], .no-drag, .chat-row, .list-row";
+  const onDown = async (e: MouseEvent) => {
+    if (e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (!t.closest(".drag") || t.closest(interactive)) return;
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    if (e.detail === 2) void getCurrentWindow().toggleMaximize();
+    else void getCurrentWindow().startDragging();
+  };
+  const onClick = async (e: MouseEvent) => {
+    const a = (e.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
+    if (!a || !/^(https?:|mailto:|tel:)/i.test(a.href)) return;
+    e.preventDefault();
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    void openUrl(a.href).catch(() => {});
+  };
+  onMount(() => {
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("click", onClick, true);
+  });
+  onCleanup(() => {
+    window.removeEventListener("mousedown", onDown);
+    window.removeEventListener("click", onClick, true);
+  });
+}
+
 export function App() {
   onMount(() => void boot());
   useAppearance();
   useShortcuts();
+  useShell();
   // The webview's own context menu has nothing useful outside text fields.
   const noMenu = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest("input, textarea, .selectable, .rich")) e.preventDefault();

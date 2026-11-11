@@ -148,11 +148,10 @@ impl Inner {
 
     /// The address to put on the wire for a member of `chat`.
     pub(crate) fn wire_member(&self, chat: &str, member: &str) -> String {
-        if lock(&self.lid_groups).contains(chat) {
-            if let Some(lid) = lock(&self.pns).get(member) {
+        if lock(&self.lid_groups).contains(chat)
+            && let Some(lid) = lock(&self.pns).get(member) {
                 return lid.clone();
             }
-        }
         member.to_string()
     }
 

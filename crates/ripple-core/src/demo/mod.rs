@@ -501,14 +501,13 @@ mod tests {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
         while tokio::time::Instant::now() < deadline {
             let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(500), events.recv()).await else { continue };
-            if let UiEvent::Message { message, .. } = ev {
-                if message.id == id && seen.last() != Some(&message.status) {
+            if let UiEvent::Message { message, .. } = ev
+                && message.id == id && seen.last() != Some(&message.status) {
                     seen.push(message.status);
                     if message.status == Status::Read {
                         break;
                     }
                 }
-            }
         }
         assert_eq!(seen, vec![Status::Pending, Status::Sent, Status::Delivered, Status::Read]);
         let chat = r.app().chat(MAYA).unwrap();

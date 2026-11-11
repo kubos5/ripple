@@ -98,15 +98,12 @@ pub fn parse(html: &str, base: &str) -> LinkPreview {
     if p.title.is_empty() {
         p.title = tw_title;
     }
-    if p.title.is_empty() {
-        if let Some(s) = lower.find("<title") {
-            if let (Some(open), Some(close)) = (lower[s..].find('>'), lower[s..].find("</title")) {
-                if close > open {
+    if p.title.is_empty()
+        && let Some(s) = lower.find("<title")
+            && let (Some(open), Some(close)) = (lower[s..].find('>'), lower[s..].find("</title"))
+                && close > open {
                     p.title = decode_entities(html[s + open + 1..s + close].trim());
                 }
-            }
-        }
-    }
     if p.description.is_empty() {
         p.description = fallback_desc;
     }

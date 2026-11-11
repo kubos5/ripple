@@ -506,11 +506,10 @@ impl Inner {
             stored.sender = jid_str(&src.sender);
             let _ = app.store.set_media_params(&chat, &m.id, &stored);
         }
-        if let Some(c) = app.chat(&chat) {
-            if c.ephemeral != timer && timer > 0 && c.kind == ChatKind::Direct {
+        if let Some(c) = app.chat(&chat)
+            && c.ephemeral != timer && timer > 0 && c.kind == ChatKind::Direct {
                 app.chat_mut(&chat, |c| c.ephemeral = timer);
             }
-        }
         if live { app.ingest_message(m, true) } else { app.ingest_offline(m) };
     }
 
@@ -611,15 +610,14 @@ impl Inner {
                 self.learn(&bare(&conv.id), &bare(pn));
             }
             let chat = self.canon_s(&conv.id);
-            if !is_group(&chat) {
-                if let Some(name) = conv.display_name.clone().or_else(|| conv.name.clone()).filter(|n| !n.is_empty()) {
+            if !is_group(&chat)
+                && let Some(name) = conv.display_name.clone().or_else(|| conv.name.clone()).filter(|n| !n.is_empty()) {
                     app.store.upsert_contact(&chat, |c| {
                         if c.name.is_none() && c.push_name.is_none() {
                             c.push_name = Some(name);
                         }
                     });
                 }
-            }
             for item in &conv.messages {
                 let Some(w) = item.message.as_option() else { continue };
                 if let Some(m) = self.from_history(app, w, &chat, &me) {
@@ -694,11 +692,10 @@ impl Inner {
         m.starred = w.starred.unwrap_or(false);
         if let Some(until) = w.ephemeral_expiration_timestamp.filter(|t| *t > 0) {
             m.expires = until as i64 * 1000;
-        } else if let (Some(start), Some(d)) = (w.ephemeral_start_timestamp, w.ephemeral_duration) {
-            if d > 0 {
+        } else if let (Some(start), Some(d)) = (w.ephemeral_start_timestamp, w.ephemeral_duration)
+            && d > 0 {
                 m.expires = (start as i64 + d as i64) * 1000;
             }
-        }
         for r in &w.reactions {
             let Some(text) = r.text.clone().filter(|t| !t.is_empty()) else { continue };
             let by = match r.key.as_option() {
@@ -735,11 +732,10 @@ impl Inner {
     async fn on_group_update(&self, app: &Arc<App>, client: &Arc<Client>, u: &whatsapp_rust::wacore::types::events::GroupUpdate) {
         let id = jid_str(&u.group_jid);
         let me = app.me();
-        if app.store.group(&id).is_none() {
-            if let Ok(md) = client.groups().get_metadata(&u.group_jid).await {
+        if app.store.group(&id).is_none()
+            && let Ok(md) = client.groups().get_metadata(&u.group_jid).await {
                 merge_group(app, group_from(self, &me, &md));
             }
-        }
         let actor = match &u.participant {
             Some(p) => Some(self.resolve(client, p, u.participant_pn.as_ref()).await),
             None => None,

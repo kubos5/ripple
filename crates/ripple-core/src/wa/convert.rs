@@ -273,12 +273,11 @@ pub fn parse(msg: &wa::Message) -> Parsed {
     }
 
     // ── things that act on another message ──
-    if let Some(r) = base.reaction_message.as_option() {
-        if let Some(id) = r.key.as_option().and_then(|k| k.id.clone()) {
+    if let Some(r) = base.reaction_message.as_option()
+        && let Some(id) = r.key.as_option().and_then(|k| k.id.clone()) {
             out.special = Special::Reaction { target: id, emoji: r.text.clone().unwrap_or_default() };
             return out;
         }
-    }
     if let Some(p) = base.protocol_message.as_option() {
         use wa::message::protocol_message::Type as T;
         let target = p.key.as_option().and_then(|k| k.id.clone()).unwrap_or_default();

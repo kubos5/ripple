@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the main window may ask the shell to do.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "dialog:allow-save",
+    "opener:allow-open-url",
+    "notification:default"
+  ]
+}

@@ -4,6 +4,10 @@
 //! [`api::UiEvent`]s. Behind it sits an [`app::App`] bound to a network
 //! backend: the real WhatsApp service, or a self-contained demo.
 
+// `..Default::default()` on library structs is kept on purpose: they are
+// non-exhaustive upstream and gain fields between releases.
+#![allow(clippy::needless_update, clippy::large_enum_variant, clippy::wrong_self_convention, clippy::field_reassign_with_default)]
+
 pub mod api;
 pub mod app;
 pub mod demo;

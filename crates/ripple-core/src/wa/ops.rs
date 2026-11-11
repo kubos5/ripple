@@ -160,11 +160,10 @@ impl Inner {
 
     /// The address the creator of a poll/event was known by when it was sent.
     fn creator_of(&self, stored: &Stored, m: &Message) -> Result<WaJid> {
-        if !stored.sender.is_empty() {
-            if let Ok(j) = parse_jid(&bare(&stored.sender)) {
+        if !stored.sender.is_empty()
+            && let Ok(j) = parse_jid(&bare(&stored.sender)) {
                 return Ok(j);
             }
-        }
         parse_jid(&self.wire_member(&m.chat, &m.sender))
     }
 

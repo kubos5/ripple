@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(resample(&a, 48_000, 48_000).len(), a.len());
         let w = waveform(&a, 64);
         assert_eq!(w.len(), 64);
-        assert!(w.iter().any(|v| *v == 100));
+        assert!(w.contains(&100));
         assert!(w[0] < w[63]);
         assert!(waveform(&[], 64).is_empty());
     }

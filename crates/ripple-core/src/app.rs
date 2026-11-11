@@ -259,7 +259,7 @@ impl App {
         let me = self.me();
         let viewing = self.is_viewing(&m.chat);
         let counts = fresh && !m.from_me && !matches!(m.content, Content::System { .. });
-        let mentioned = m.mentions.iter().any(|j| *j == me) || m.quote.as_ref().is_some_and(|q| q.sender == me);
+        let mentioned = m.mentions.contains(&me) || m.quote.as_ref().is_some_and(|q| q.sender == me);
         let chat = self.chat_mut(&m.chat, |c| {
             if c.last.as_ref().is_none_or(|l| l.ts <= m.ts) {
                 // A chat with no messages yet sorts by its creation time; once it has one, by that.
@@ -1097,12 +1097,11 @@ impl App {
                         }
                         let mut m = self.base_message(&row, content);
                         m.forwarded = if src.from_me && src.forwarded == 0 { 1 } else { src.forwarded + 1 };
-                        if let Some(media) = src.content.media() {
-                            if media.state != MediaState::Ready {
+                        if let Some(media) = src.content.media()
+                            && media.state != MediaState::Ready {
                                 self.toast("error", "Download the media before forwarding it");
                                 continue;
                             }
-                        }
                         self.dispatch(m);
                     }
                 }
@@ -1152,11 +1151,10 @@ impl App {
                 Ok(Value::Null)
             }
             Request::Played { chat, id } => {
-                if let Some(m) = self.store.message(&chat, &id) {
-                    if !m.from_me {
+                if let Some(m) = self.store.message(&chat, &id)
+                    && !m.from_me {
                         self.fire_quiet(NetOp::MarkPlayed { target: Box::new(m) });
                     }
-                }
                 Ok(Value::Null)
             }
             Request::SaveMedia { chat, id, to } => {
