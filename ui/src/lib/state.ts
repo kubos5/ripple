@@ -200,7 +200,10 @@ const byOrder = (a: Chat, b: Chat) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
 
 export const derived = createRoot(() => {
   const all = createMemo(() => Object.values(state.chats));
-  const inbox = createMemo(() => all().filter((c) => !c.archived).sort(byOrder));
+  // A one-to-one chat with nothing in it (history sync lists some) stays out of
+  // the list until it has a message, a draft, or is the chat being viewed.
+  const shown = (c: Chat) => c.kind !== "direct" || !!c.last || !!c.draft || c.unread > 0 || c.id === state.convo.chat;
+  const inbox = createMemo(() => all().filter((c) => !c.archived && shown(c)).sort(byOrder));
   const archived = createMemo(() => all().filter((c) => c.archived).sort((a, b) => b.ts - a.ts));
   const communities = createMemo(() =>
     Object.values(state.groups).filter((g) => g.isCommunity).sort((a, b) => a.subject.localeCompare(b.subject)),
