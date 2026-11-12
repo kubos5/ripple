@@ -9,7 +9,16 @@ import type { Chat, LinkPreview, Message } from "../lib/types";
 import { EDIT_WINDOW } from "./Bubble";
 import { EmojiPicker, StickerPicker, pickFiles } from "./Pickers";
 import { KIND_ICON } from "./Sidebar";
-import { Avatar, Icon, IconButton, openMenu } from "./ui";
+import { Avatar, Icon, IconButton, menuOpen, openMenu } from "./ui";
+
+const MAC = /Mac/.test(navigator.platform);
+
+// The emoji/sticker panel reopens on whichever side was picked last.
+type PickerMode = "emoji" | "sticker";
+const MODE_KEY = "ripple.picker";
+const lastMode = (): PickerMode => {
+  try { return localStorage.getItem(MODE_KEY) === "sticker" ? "sticker" : "emoji"; } catch { return "emoji"; }
+};
 
 function quoteLabel(m: Message) {
   const c = m.content;
@@ -25,7 +34,11 @@ export function Composer(props: { chat: Chat }) {
   let area!: HTMLTextAreaElement;
   let root!: HTMLDivElement;
   const [text, setText] = createSignal(props.chat.draft ?? "");
-  const [picker, setPicker] = createSignal<null | "emoji" | "sticker">(null);
+  const [picker, setPicker] = createSignal<null | PickerMode>(null);
+  const choose = (mode: PickerMode) => {
+    setPicker(mode);
+    try { localStorage.setItem(MODE_KEY, mode); } catch { /* storage unavailable */ }
+  };
   const [suggest, setSuggest] = createSignal<{ query: string; at: number } | null>(null);
   const [active, setActive] = createSignal(0);
   const [preview, setPreview] = createSignal<LinkPreview | null>(null);
@@ -43,6 +56,21 @@ export function Composer(props: { chat: Chat }) {
     area.style.height = `${Math.min(180, area.scrollHeight)}px`;
   };
   const focus = () => area?.focus({ preventScroll: true });
+
+  // Typing while nothing else takes text goes to the message box. Focusing it during
+  // keydown makes the webview deliver that same key there, so accents, Option/AltGr
+  // characters and undo all behave as if the box had been focused already.
+  const onType = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.isComposing || !area?.isConnected || document.activeElement === area) return;
+    if (e.metaKey || (e.ctrlKey && !e.getModifierState("AltGraph")) || (e.altKey && !MAC && !e.getModifierState("AltGraph"))) return;
+    if (e.key.length !== 1 && e.key !== "Dead") return;
+    if (state.modal || state.lightbox || state.recording || picker() || menuOpen()) return;
+    const t = document.activeElement as HTMLElement | null;
+    if (t?.closest("input, textarea, select, [contenteditable]")) return;
+    if (e.key === " " && t?.closest("button, a, [role=button], [tabindex]")) return;
+    focus();
+  };
+
   const put = (value: string) => {
     setText(value);
     area.value = value;
@@ -56,9 +84,11 @@ export function Composer(props: { chat: Chat }) {
     const onDown = (e: MouseEvent) => { if (picker() && !root.contains(e.target as Node)) setPicker(null); };
     window.addEventListener("ripple:focus-composer", onFocusReq);
     window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onType);
     onCleanup(() => {
       window.removeEventListener("ripple:focus-composer", onFocusReq);
       window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onType);
       stopTyping();
       if (state.recording) void act("recordStop", { chat: null, replyTo: null });
       setState("recording", null);
@@ -302,8 +332,8 @@ export function Composer(props: { chat: Chat }) {
       <Show when={picker()}>
         <div class="picker-pop">
           <div class="pp-tabs">
-            <button class={picker() === "emoji" ? "on" : ""} onClick={() => setPicker("emoji")}>Emoji</button>
-            <button class={picker() === "sticker" ? "on" : ""} onClick={() => setPicker("sticker")}>Stickers</button>
+            <button class={picker() === "emoji" ? "on" : ""} onClick={() => choose("emoji")}>Emoji</button>
+            <button class={picker() === "sticker" ? "on" : ""} onClick={() => choose("sticker")}>Stickers</button>
           </div>
           <Show when={picker() === "emoji"} fallback={<StickerPicker onDone={() => setPicker(null)} />}>
             <EmojiPicker onPick={insertEmoji} autofocus />
@@ -387,7 +417,7 @@ export function Composer(props: { chat: Chat }) {
             </Show>
             <div class="composer-row">
               <IconButton icon="plus" tip="Attach" tipPos="top" onClick={attach} disabled={!!state.editing} />
-              <IconButton icon="smiley" tip={picker() ? undefined : "Emoji & stickers"} aria-label="Emoji & stickers" tipPos="top" on={!!picker()} onClick={() => setPicker(picker() ? null : "emoji")} />
+              <IconButton icon="smiley" tip={picker() ? undefined : "Emoji & stickers"} aria-label="Emoji & stickers" tipPos="top" on={!!picker()} onClick={() => setPicker(picker() ? null : lastMode())} />
               <textarea
                 ref={area}
                 rows={1}

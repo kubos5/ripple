@@ -7,7 +7,7 @@ use whatsapp_rust::wacore::poll::{compute_option_hash, encrypt_poll_vote_with_se
 use whatsapp_rust::waproto::buffa::MessageField;
 use whatsapp_rust::waproto::whatsapp as wa;
 
-use super::convert::pb;
+use super::convert::{self, pb};
 use super::events::Incoming;
 use super::{LiveNet, group_from, merge_group};
 use crate::app::App;
@@ -203,7 +203,7 @@ async fn history_chunk_fills_chats_names_and_state() {
             unread_count: Some(0),
             archived: Some(true),
             pinned: Some(1_700_000_500),
-            mute_end_time: Some(0),
+            mute_end_time: Some(4_102_444_800), // 2100-01-01, in seconds
             ephemeral_expiration: Some(604_800) })],
         pushnames: vec![pb!(wa::Pushname { id: Some(ANA.into()), pushname: Some("Ana".into()) })],
         progress: Some(40) });
@@ -213,6 +213,11 @@ async fn history_chunk_fills_chats_names_and_state() {
     assert!(app.chat(ANA_LID).is_none());
     let chat = app.chat(ANA).unwrap();
     assert!(chat.archived && chat.pinned > 0 && chat.ephemeral == 604_800);
+    // History sync gives the mute end in seconds; it is kept in milliseconds.
+    assert_eq!(chat.muted_until, 4_102_444_800_000);
+    assert_eq!(convert::mute_until(-1), -1);
+    assert_eq!(convert::mute_until(u64::MAX as i64), -1);
+    assert_eq!(convert::mute_until(0), 0);
     assert_eq!(chat.last.as_ref().unwrap().id, "H2");
     assert_eq!(chat.name, "Ana");
     let msgs = app.store.messages(ANA, None, 10);

@@ -422,6 +422,13 @@ pub fn ms(ts: i64) -> i64 {
     if ts > 0 && ts < 100_000_000_000 { ts * 1000 } else { ts }
 }
 
+/// When a mute ends, in milliseconds: 0 for not muted, -1 for always.
+/// History sync sends seconds and settings sync sends milliseconds; "always" arrives
+/// as -1 or as its unsigned twin.
+pub fn mute_until(raw: i64) -> i64 {
+    if raw < 0 { -1 } else { ms(raw) }
+}
+
 fn remote_sticker(
     direct_path: &Option<String>,
     media_key: &Option<Vec<u8>>,

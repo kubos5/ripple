@@ -302,6 +302,29 @@
 }
 .msg:hover .msg-actions, .msg.menu-open .msg-actions { opacity: 1; pointer-events: auto; }
 .msg.selecting .msg-actions { display: none; }
+.msg.swiping .msg-actions { visibility: hidden; }
+
+/* Two-finger swipe to reply: the bubble follows the fingers, then eases back on release
+   (one of the few things that animate, at the user's request). */
+.bubble.swipe-back { transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1); }
+.swipe-hint {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-2);
+  opacity: 0;
+  pointer-events: none;
+}
+.swipe-hint .icon { font-size: 16px; }
+.swipe-hint.ready { background: var(--accent); color: var(--accent-ink); }
+.swipe-hint.swipe-back { transition: opacity 140ms ease-out; }
 .msg-actions .icon-btn { width: 30px; height: 30px; border-radius: var(--r-round); color: var(--text-3); }
 .msg-actions .icon-btn .icon { font-size: 18px; }
 
@@ -382,6 +405,10 @@
 .album .more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10, 12, 14, 0.6); color: #fff; font-size: var(--fs-20); font-weight: 650; }
 
 .sticker { width: 150px; height: 150px; object-fit: contain; cursor: pointer; }
+.sticker-wrap { position: relative; padding-bottom: 16px; }
+.sticker-wrap.boxed { padding: 2px 0 0; }
+.sticker-wrap.boxed .sticker { display: block; }
+.bubble.sticker-box { max-width: min(340px, 74%); }
 .sticker-skel { width: 150px; height: 150px; border-radius: var(--r-lg); background: var(--surface-1); display: grid; place-items: center; color: var(--text-3); }
 
 .once {

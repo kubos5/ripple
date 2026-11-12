@@ -29,31 +29,85 @@ export function Lightbox() {
   createEffect(on(() => state.lightbox?.id, () => { setZoom(1); setPan({ x: 0, y: 0 }); }));
   createEffect(() => { if (state.lightbox && !current()) close(); });
 
+  // ── zoom and pan ──
+  // The photo is centred in the stage and scaled about its centre, so `pan` is the
+  // offset of its centre from the stage's. Panning stops once an edge reaches the stage.
+  let stage: HTMLDivElement | undefined;
+  let img: HTMLImageElement | undefined;
+  const clampPan = (p: { x: number; y: number }, z = zoom()) => {
+    if (!img || !stage) return { x: 0, y: 0 };
+    const bx = Math.max(0, (img.offsetWidth * z - stage.clientWidth) / 2);
+    const by = Math.max(0, (img.offsetHeight * z - stage.clientHeight) / 2);
+    return { x: Math.min(bx, Math.max(-bx, p.x)), y: Math.min(by, Math.max(-by, p.y)) };
+  };
+  /** Zooms to `z`, keeping the point under `at` (a client position) where it is. */
+  const zoomTo = (z: number, at?: { x: number; y: number }) => {
+    const next = Math.min(4, Math.max(1, z));
+    if (next === 1) {
+      setZoom(1);
+      return setPan({ x: 0, y: 0 });
+    }
+    let p = pan();
+    if (at && stage) {
+      const r = stage.getBoundingClientRect();
+      const q = { x: at.x - (r.left + r.width / 2), y: at.y - (r.top + r.height / 2) };
+      const k = next / zoom();
+      p = { x: q.x - (q.x - p.x) * k, y: q.y - (q.y - p.y) * k };
+    }
+    setZoom(next);
+    setPan(clampPan(p, next));
+  };
+
   const onKey = (e: KeyboardEvent) => {
     if (state.modal) return;
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
     else if (e.key === "ArrowLeft") step(-1);
     else if (e.key === "ArrowRight") step(1);
-    else if (e.key === "+" || e.key === "=") setZoom((z) => Math.min(4, z + 0.5));
-    else if (e.key === "-") { setZoom((z) => Math.max(1, z - 0.5)); if (zoom() === 1) setPan({ x: 0, y: 0 }); }
+    else if (e.key === "+" || e.key === "=") zoomTo(zoom() + 0.5);
+    else if (e.key === "-") zoomTo(zoom() - 0.5);
   };
   onMount(() => window.addEventListener("keydown", onKey, true));
   onCleanup(() => window.removeEventListener("keydown", onKey, true));
 
+  // Scrolling never zooms. Zoomed out it does nothing; zoomed in it moves the photo,
+  // in both directions, so a trackpad pans it like a page. Pinching zooms: Chromium
+  // reports a pinch as a wheel event with ctrlKey (as Ctrl + wheel does), WebKit as
+  // gesture events.
+  let pinching = false;
+  let pinchFrom = 1;
   const onWheel = (e: WheelEvent) => {
-    if (media()?.type !== "image") return;
     e.preventDefault();
-    const next = Math.min(4, Math.max(1, zoom() * (e.deltaY < 0 ? 1.12 : 0.89)));
-    setZoom(next);
-    if (next === 1) setPan({ x: 0, y: 0 });
+    if (media()?.type !== "image" || pinching) return;
+    if (e.ctrlKey) {
+      const d = Math.max(-25, Math.min(25, e.deltaY));
+      return zoomTo(zoom() * Math.exp(-d * 0.01), { x: e.clientX, y: e.clientY });
+    }
+    if (zoom() === 1) return;
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (stage?.clientHeight ?? 400) : 1;
+    setPan(clampPan({ x: pan().x - e.deltaX * unit, y: pan().y - e.deltaY * unit }));
   };
+  type Gesture = UIEvent & { scale: number; clientX: number; clientY: number };
+  const onGesture = (e: Event) => {
+    e.preventDefault();
+    if (media()?.type !== "image") return;
+    const g = e as Gesture;
+    if (e.type === "gesturestart") { pinching = true; pinchFrom = zoom(); }
+    else if (e.type === "gestureend") pinching = false;
+    else zoomTo(pinchFrom * g.scale, { x: g.clientX, y: g.clientY });
+  };
+  const bindStage = (el: HTMLDivElement) => {
+    stage = el;
+    el.addEventListener("wheel", onWheel, { passive: false });
+    for (const t of ["gesturestart", "gesturechange", "gestureend"]) el.addEventListener(t, onGesture);
+  };
+
   const onDown = (e: PointerEvent) => {
     if (zoom() === 1) return;
     e.preventDefault();
     const start = { x: e.clientX - pan().x, y: e.clientY - pan().y };
     let moved = false;
     setDragging(true);
-    const move = (ev: PointerEvent) => { moved = true; setPan({ x: ev.clientX - start.x, y: ev.clientY - start.y }); };
+    const move = (ev: PointerEvent) => { moved = true; setPan(clampPan({ x: ev.clientX - start.x, y: ev.clientY - start.y })); };
     const up = () => {
       setDragging(false);
       window.removeEventListener("pointermove", move);
@@ -79,11 +133,11 @@ export function Lightbox() {
               <IconButton class="no-drag" icon="download-simple" tip="Save" onClick={() => void saveMedia(m())} />
             </Show>
             <Show when={media()?.type === "image"}>
-              <IconButton class="no-drag" icon={zoom() > 1 ? "magnifying-glass-minus" : "magnifying-glass-plus"} tip={zoom() > 1 ? "Zoom out" : "Zoom in"} onClick={() => { setZoom(zoom() > 1 ? 1 : 2); setPan({ x: 0, y: 0 }); }} />
+              <IconButton class="no-drag" icon={zoom() > 1 ? "magnifying-glass-minus" : "magnifying-glass-plus"} tip={zoom() > 1 ? "Zoom out" : "Zoom in"} onClick={() => zoomTo(zoom() > 1 ? 1 : 2)} />
             </Show>
             <IconButton class="no-drag" icon="x" tip="Close" onClick={close} />
           </div>
-          <div class="lb-stage" onWheel={onWheel}>
+          <div class="lb-stage" ref={bindStage}>
             <Show when={index() > 0}><button class="lb-nav prev" aria-label="Previous" onClick={() => step(-1)}><Icon name="caret-left" /></button></Show>
             <Show when={index() < items().length - 1}><button class="lb-nav next" aria-label="Next" onClick={() => step(1)}><Icon name="caret-right" /></button></Show>
             {/* The media is fitted inside this box (never cropped); clicking around it closes. */}
@@ -92,13 +146,14 @@ export function Lightbox() {
                 {(c) => (
                   <Show when={c.type === "image"} fallback={<video src={mediaUrl(c.media.token)} controls autoplay loop={c.type === "video" && c.gif} />}>
                     <img
+                      ref={(el) => (img = el)}
                       src={mediaUrl(c.media.token)}
                       alt=""
                       draggable={false}
-                      class={`${zoom() > 1 ? "zoomed" : ""} ${dragging() ? "zooming" : ""}`}
+                      class={`${zoom() > 1 ? "zoomed" : ""} ${dragging() ? "dragging" : ""}`}
                       style={{ transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})` }}
                       onPointerDown={onDown}
-                      onClick={() => { if (zoom() === 1) setZoom(2); }}
+                      onClick={(e) => { if (zoom() === 1) zoomTo(2, { x: e.clientX, y: e.clientY }); }}
                     />
                   </Show>
                 )}

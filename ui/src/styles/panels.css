@@ -1,11 +1,13 @@
 /* Pickers, side panel, lightbox, settings, palette, welcome, call banner. */
 
 /* ───────────── emoji / sticker picker ───────────── */
+/* Sized like WhatsApp Web's panel: the sticker grid shows exactly 5 × 4 stickers
+   (8px side padding, 5 × 88px tiles with 4px gaps; 47px tab bar + 4 rows + 12px padding). */
 .picker-pop {
   position: absolute;
   left: 16px;
   bottom: calc(100% - 2px);
-  width: 372px;
+  width: 472px;
   max-width: calc(100% - 32px);
   border-radius: var(--r-xl);
   background: var(--overlay);
@@ -20,6 +22,9 @@
 .menu.flush { padding: 0; border-radius: var(--r-xl); overflow: hidden; max-width: none; max-height: none; }
 
 .emoji-picker { width: 372px; height: 380px; display: flex; flex-direction: column; max-width: 100%; }
+.picker-pop .emoji-picker { width: 100%; height: 423px; }
+.picker-pop .ep-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+.picker-pop .emoji { font-size: 26px; }
 .ep-search { position: relative; margin: 10px 10px 6px; flex: none; }
 .ep-search .icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 16px; color: var(--text-3); }
 .ep-search input { width: 100%; height: 34px; padding: 0 12px 0 34px; border-radius: var(--r-full); border: 1px solid transparent; background: var(--surface-1); cursor: text; }
@@ -43,16 +48,16 @@
 .ep-foot { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 14px; border-top: 1px solid var(--line); font-size: var(--fs-12); color: var(--text-2); flex: none; }
 .ep-foot .skin { width: 30px; height: 30px; border-radius: 4px; font-size: 18px; }
 .ep-foot .skin:hover { background: var(--surface-2); }
-/* Always three across; `minmax(0, …)` keeps a wide sticker from stretching its column. */
-.sticker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-top: 4px; }
-.sticker-grid button { aspect-ratio: 1; min-width: 0; border-radius: var(--r-md); padding: 10px; }
+/* Always five across; `minmax(0, …)` keeps a wide sticker from stretching its column. */
+.sticker-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding-top: 4px; }
+.sticker-grid button { aspect-ratio: 1; min-width: 0; border-radius: var(--r-md); padding: 8px; }
 .sticker-grid button:hover { background: var(--surface-2); }
 .sticker-grid button:active { transform: scale(0.97); }
 .sticker-grid img { width: 100%; height: 100%; object-fit: contain; }
-.sticker-grid .st-skel { aspect-ratio: 1; margin: 10px; border-radius: var(--r-lg); background: var(--surface-2); }
+.sticker-grid .st-skel { aspect-ratio: 1; margin: 8px; border-radius: var(--r-lg); background: var(--surface-2); }
 /* A favourite WhatsApp no longer has a file for. */
 .sticker-grid .st-gone { display: grid; place-items: center; color: var(--text-3); background: none; border: 1.5px dashed var(--line-strong); }
-.sticker-grid .st-gone .icon { font-size: 26px; }
+.sticker-grid .st-gone .icon { font-size: 22px; }
 
 /* ───────────── side panel ───────────── */
 .panel {
@@ -135,9 +140,9 @@ button.set-row.danger:hover { background: var(--danger-soft); }
    (A grid cell's max-height: 100% doesn't constrain anything, which let tall photos spill off-screen.) */
 .lb-fit { position: absolute; inset: 6px 70px; }
 .lb-fit img, .lb-fit video { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; border-radius: 4px; }
-.lb-stage img.zooming { cursor: grab; }
 .lb-stage img { cursor: zoom-in; }
 .lb-stage img.zoomed { cursor: grab; }
+.lb-stage img.dragging { cursor: grabbing; }
 .lb-nav { position: absolute; top: 50%; width: 44px; height: 44px; margin-top: -22px; border-radius: var(--r-round); display: grid; place-items: center; background: rgba(255, 255, 255, 0.1); color: #fff; z-index: 2; }
 .lb-nav:hover { background: rgba(255, 255, 255, 0.2); }
 .lb-nav:active { transform: scale(0.97); }

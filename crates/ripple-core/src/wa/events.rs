@@ -238,7 +238,7 @@ impl Inner {
             }
             Event::MuteUpdate(u) => {
                 let id = self.resolve(&client, &u.jid, None).await;
-                let until = if u.action.muted.unwrap_or(false) { u.action.mute_end_timestamp.unwrap_or(-1) } else { 0 };
+                let until = if u.action.muted.unwrap_or(false) { convert::mute_until(u.action.mute_end_timestamp.unwrap_or(-1)) } else { 0 };
                 app.chat_mut(&id, |c| c.muted_until = until);
             }
             Event::ArchiveUpdate(u) => {
@@ -794,7 +794,7 @@ impl Inner {
                     c.pinned = p as i64 * 1000;
                 }
                 if let Some(mute) = conv.mute_end_time {
-                    c.muted_until = if mute == 0 { 0 } else { mute as i64 };
+                    c.muted_until = convert::mute_until(mute as i64);
                 }
                 if let Some(e) = conv.ephemeral_expiration {
                     c.ephemeral = e;

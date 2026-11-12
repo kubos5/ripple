@@ -106,6 +106,8 @@ export function closeMenu() {
   setMenu(null);
 }
 
+export const menuOpen = () => menu() !== null;
+
 /** Opens a context menu at a pointer event or anchored under an element. */
 export function openMenu(at: MouseEvent | HTMLElement, items: MenuEntry[], opts: Partial<OpenMenu> = {}) {
   const anchor =

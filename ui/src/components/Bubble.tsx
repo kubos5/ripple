@@ -672,7 +672,8 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
     return "caption" in x ? x.caption : "";
   };
   const visual = () => !m().viewOnce && (c().type === "image" || c().type === "video");
-  const bare = () => c().type === "sticker";
+  // A sticker on its own floats free; with a reply or a "Forwarded" label it gets a bubble.
+  const bare = () => c().type === "sticker" && !m().quote && !(m().forwarded > 0);
   const selected = () => !!state.selected[m().id];
   const showSender = () => group() && !m().fromMe && props.flags().first;
   const textTail = () => <span class="meta-gap" style={{ width: `${metaWidth(m())}px` }} />;
@@ -717,7 +718,7 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
               </Show>
             </div>
           </Show>
-          <div class={`bubble ${bare() ? "bare" : ""} ${visual() || album() ? "media" : ""}`}>
+          <div class={`bubble ${bare() ? "bare" : ""} ${visual() || album() ? "media" : ""} ${c().type === "sticker" && !bare() ? "sticker-box" : ""}`}>
             <Show when={showSender() && !bare()}>
               <div class="sender" style={{ "--tone": `var(--tone-${tone(m().sender)})` }} onClick={(e) => { e.stopPropagation(); openModal("contact", { jid: m().sender }); }}>
                 {contactName(m().sender)}
@@ -797,7 +798,7 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
               </Match>
               <Match when={is("sticker")}>
                 {(s) => (
-                  <div style={{ position: "relative", "padding-bottom": "16px" }}>
+                  <div class={`sticker-wrap ${bare() ? "" : "boxed"}`}>
                     <Show when={s().media.state === "ready"} fallback={<div class="sticker-skel"><Icon name={s().media.state === "downloading" ? "circle-notch" : "sticker"} class={s().media.state === "downloading" ? "ring-progress" : ""} size={26} /></div>}>
                       <img
                         class="sticker"
@@ -808,7 +809,7 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
                         onClick={(e) => { e.stopPropagation(); openModal("sticker", { chat: m().chat, id: m().id }); }}
                       />
                     </Show>
-                    <Meta m={m()} mode="float" />
+                    <Meta m={m()} mode={bare() ? "float" : "row"} />
                   </div>
                 )}
               </Match>

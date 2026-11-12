@@ -298,7 +298,7 @@ impl App {
             if viewing {
                 self.send_read_receipts(&m.chat, vec![m.clone()]);
             } else if let (true, Some(chat)) = (live, chat) {
-                self.notify(&chat, &m, mentioned);
+                self.notify(&chat, &m);
             }
         }
         Some(m)
@@ -339,11 +339,12 @@ impl App {
         self.ensure_chat(id);
     }
 
-    fn notify(&self, chat: &Chat, m: &Message, mentioned: bool) {
+    /// Muted and archived chats never notify, not even for a mention or a reply.
+    fn notify(&self, chat: &Chat, m: &Message) {
         let s = self.settings();
         let now = now_ms();
         let muted = chat.muted_until == -1 || chat.muted_until > now;
-        if !s.notifications || chat.archived || (muted && !mentioned) {
+        if !s.notifications || chat.archived || muted {
             return;
         }
         // Names come from the contact book, not `chat.name`, which is fixed when the

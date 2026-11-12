@@ -183,11 +183,19 @@ export function pickFiles(accept: string, multiple = true): Promise<File[]> {
   });
 }
 
-const RECENT_STICKERS = 48;
+const RECENT_STICKERS = 60;
+const TAB_KEY = "ripple.stickers.tab";
 
 export function StickerPicker(props: { onDone: () => void }) {
   const [list, { mutate, refetch }] = createResource(stickerRev, () => call<Sticker[]>("stickers").catch(() => []));
-  const [tab, setTab] = createSignal<"recent" | "fav">("recent");
+  // Reopens on the list that was showing last time.
+  const [tab, setTabSignal] = createSignal<"recent" | "fav">((() => {
+    try { return localStorage.getItem(TAB_KEY) === "fav" ? "fav" : "recent"; } catch { return "recent"; }
+  })());
+  const setTab = (t: "recent" | "fav") => {
+    setTabSignal(t);
+    try { localStorage.setItem(TAB_KEY, t); } catch { /* storage unavailable */ }
+  };
   // The library comes back most recently used first (`used` is a timestamp).
   // Favourites that can't be fetched any more stay listed so they can be removed;
   // recents like that are simply left out.

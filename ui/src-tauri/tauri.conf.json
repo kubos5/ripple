@@ -41,6 +41,14 @@
       "entitlements": "entitlements.plist",
       "files": { "Resources/Assets.car": "icons/macos/Assets.car" }
     },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "compression": "lzma"
+      }
+    },
     "linux": {
       "deb": { "depends": ["gstreamer1.0-plugins-good", "gstreamer1.0-libav"] }
     }

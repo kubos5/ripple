@@ -670,9 +670,12 @@ mod tests {
         app.ingest_message(incoming(DAD, DAD, text("Pong")), true);
         assert_eq!(app.chat(DAD).unwrap().unread, 0);
 
-        // Muted chats stay quiet.
+        // Muted chats stay quiet, even when they mention us.
         let mut events = r.subscribe();
         app.ingest_message(incoming(FLAT, CHLOE, text("quiet")), true);
+        let mut mention = incoming(FLAT, CHLOE, text("@you"));
+        mention.mentions = vec![app.me()];
+        app.ingest_message(mention, true);
         let mut noisy = false;
         while let Ok(ev) = events.try_recv() {
             noisy |= matches!(ev, UiEvent::Notify { .. });

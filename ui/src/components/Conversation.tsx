@@ -7,6 +7,7 @@ import {
   act, chatName, clearSelection, contactName, derived, isMuted, jumpSignal, jumpToLatest, jumpToMessage, loadNewer,
   loadOlder, openModal, previewText, selectedMessages, setState, state, stickSignal, toast, typingLabel,
 } from "../lib/state";
+import { swipeToReply } from "../lib/swipe";
 import type { Chat, Message } from "../lib/types";
 import { MessageRow, type RowFlags, stopAudio } from "./Bubble";
 import { Composer } from "./Composer";
@@ -150,6 +151,7 @@ const isVisual = (m: Message) => !m.viewOnce && (m.content.type === "image" || (
 function MessageList(props: { chat: Chat }) {
   let scroller!: HTMLDivElement;
   let tail!: HTMLDivElement;
+  let hint!: HTMLDivElement;
   let handle: VirtualizerHandle | undefined;
   const cache = new Map<string, Item>();
   const [shift, setShift] = createSignal(false);
@@ -253,6 +255,22 @@ function MessageList(props: { chat: Chat }) {
     ro.observe(scroller);
     ro.observe(tail);
     onCleanup(() => ro.disconnect());
+
+    const onWheel = swipeToReply({
+      hint,
+      canReply: (id) => {
+        const m = state.convo.messages.find((x) => x.id === id);
+        return !!m && !state.selecting && !props.chat.readOnly && m.content.type !== "deleted";
+      },
+      reply: (id) => {
+        const m = state.convo.messages.find((x) => x.id === id);
+        if (!m) return;
+        setState({ reply: m, editing: null });
+        window.dispatchEvent(new Event("ripple:focus-composer"));
+      },
+    });
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    onCleanup(() => scroller.removeEventListener("wheel", onWheel));
   });
 
   // New messages: follow if we were at the bottom, otherwise count them on the jump button.
@@ -370,6 +388,7 @@ function MessageList(props: { chat: Chat }) {
           <div class="msg-pad" />
         </div>
       </div>
+      <div class="swipe-hint" ref={hint} aria-hidden="true"><Icon name="arrow-bend-up-left" /></div>
       <Show when={!atBottom() || state.convo.detached}>
         <button class="jump" aria-label="Jump to latest" onClick={() => void jumpToLatest()}>
           <Icon name="arrow-down" />

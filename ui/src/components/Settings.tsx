@@ -180,7 +180,7 @@ function NotificationsPane() {
         <Check title="Show message preview" sub="Include the sender and text in notifications" on={s().notificationPreview} set={(v) => updateSettings({ notificationPreview: v })} disabled={!s().notifications} />
         <Check title="Play a sound" on={s().notificationSound} set={(v) => updateSettings({ notificationSound: v })} disabled={!s().notifications} />
       </div>
-      <p class="hint" style={{ padding: "4px 6px" }}>Muted and archived chats stay quiet. You'll still be notified when someone mentions you in a muted group.</p>
+      <p class="hint" style={{ padding: "4px 6px" }}>Muted and archived chats never notify you, even when someone mentions you.</p>
     </>
   );
 }
