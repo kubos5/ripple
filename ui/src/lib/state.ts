@@ -77,7 +77,7 @@ interface State {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  theme: "system", accent: "tidal", textScale: 1, compact: false, enterSends: true, notifications: true,
+  theme: "system", accent: "mono", font: "system", design: 2, textScale: 1, compact: false, enterSends: true, notifications: true,
   notificationPreview: true, notificationSound: true, autoImages: true, autoAudio: true, autoVideo: false,
   autoDocuments: false, linkPreviews: true, closeToTray: true, autostart: false, spellcheck: true,
   reduceMotion: "system", sidebarWidth: 348, quickReactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
@@ -127,6 +127,8 @@ export const [state, setState] = createStore<State>({
 export const freshIds = new Set<string>();
 /** Bumped whenever the list should stick to the bottom after an update. */
 export const [stickSignal, setStick] = createSignal(0);
+/** Bumped when the sticker library changes (sync, download, favourite). */
+export const [stickerRev, setStickerRev] = createSignal(0);
 /** Fired with a message id the list should scroll to. */
 export const [jumpSignal, setJump] = createSignal<{ id: string; n: number } | null>(null);
 
@@ -356,6 +358,8 @@ function apply(ev: UiEvent) {
       return toast(ev.text, ev.tone === "error" ? "error" : "info");
     case "badge":
       return setState("badge", ev.count);
+    case "stickers":
+      return setStickerRev((n) => n + 1);
     case "notify":
     case "progress":
       return;

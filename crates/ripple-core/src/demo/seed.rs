@@ -745,16 +745,24 @@ pub fn seed(app: &Arc<App>) {
     app.chat_mut(DAD, |c| c.draft = Some("Sorry, was in a meeting. Calling ".into()));
 
     // ── sticker library ──
+    let library = |token: String, used: i64, favorite: bool, animated: bool| {
+        let Some(bytes) = app.media.path(&token).and_then(|p| std::fs::read(p).ok()) else { return };
+        let _ = app.store.put_sticker(&Sticker {
+            id: file_hash(&bytes),
+            token: Some(token),
+            width: 512,
+            height: 512,
+            animated,
+            favorite,
+            used,
+            remote: None,
+        });
+    };
     for (i, token) in [st0, st1, st2, st3].into_iter().enumerate() {
-        let st = Sticker { token: token.clone(), width: 512, height: 512, ..Default::default() };
-        let _ = app.store.touch_sticker(&st, now - i as i64 * 60_000);
-        if i < 2 {
-            let _ = app.store.favorite_sticker(&token, true);
-        }
+        library(token, now - i as i64 * 60_000, i < 2, false);
     }
     if let Ok(token) = app.media.write("s", "webp", include_bytes!("assets/wave.webp")) {
-        let st = Sticker { token, width: 512, height: 512, animated: true, ..Default::default() };
-        let _ = app.store.touch_sticker(&st, now - 5 * 60_000);
+        library(token, now - 5 * 60_000, false, true);
     }
 
     if std::env::var("RIPPLE_DEMO_STRESS").is_ok() {

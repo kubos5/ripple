@@ -7,12 +7,13 @@ use serde_json::{Value, json};
 use whatsapp_rust::Jid as WaJid;
 use whatsapp_rust::client::Client;
 use whatsapp_rust::download::MediaType;
-use whatsapp_rust::send::{PinDuration, RevokeType, SendOptions};
+use whatsapp_rust::send::{PinDuration, SendOptions};
 use whatsapp_rust::wacore::download::Downloadable;
 use whatsapp_rust::wacore::proto_helpers::MessageExt;
 use whatsapp_rust::waproto::buffa::MessageField;
 use whatsapp_rust::waproto::whatsapp as wa;
 
+use super::convert::pb;
 use super::convert::{self, Stored, Uploaded, jid_str, parse_jid};
 use super::{Inner, err, group_from, lock, merge_group};
 use crate::api::*;
@@ -68,25 +69,23 @@ impl Inner {
         let mut secret: Option<Vec<u8>> = None;
         let mut proto = match &m.content {
             Content::Poll { question, options, selectable } => {
-                let poll = wa::message::PollCreationMessage {
+                let poll = pb!(wa::message::PollCreationMessage {
                     name: Some(question.clone()),
                     options: options
                         .iter()
-                        .map(|o| wa::message::poll_creation_message::Option { option_name: Some(o.name.clone()), ..Default::default() })
+                        .map(|o| pb!(wa::message::poll_creation_message::Option { option_name: Some(o.name.clone()) }))
                         .collect(),
-                    selectable_options_count: Some(*selectable),
-                    ..Default::default()
-                };
+                    selectable_options_count: Some(*selectable) });
                 secret = Some(random_secret());
                 if *selectable == 1 {
-                    wa::Message { poll_creation_message_v3: MessageField::some(poll), ..Default::default() }
+                    pb!(wa::Message { poll_creation_message_v3: MessageField::some(poll) })
                 } else {
-                    wa::Message { poll_creation_message: MessageField::some(poll), ..Default::default() }
+                    pb!(wa::Message { poll_creation_message: MessageField::some(poll) })
                 }
             }
             Content::Event { name, description, location, start, end, .. } => {
                 secret = Some(random_secret());
-                let ev = wa::message::EventMessage {
+                let ev = pb!(wa::message::EventMessage {
                     name: Some(name.clone()),
                     description: (!description.is_empty()).then(|| description.clone()),
                     start_time: Some(start / 1000),
@@ -94,11 +93,9 @@ impl Inner {
                     location: if location.is_empty() {
                         MessageField::default()
                     } else {
-                        MessageField::some(wa::message::LocationMessage { name: Some(location.clone()), ..Default::default() })
-                    },
-                    ..Default::default()
-                };
-                wa::Message { event_message: MessageField::some(ev), ..Default::default() }
+                        MessageField::some(pb!(wa::message::LocationMessage { name: Some(location.clone()) }))
+                    } });
+                pb!(wa::Message { event_message: MessageField::some(ev) })
             }
             content => {
                 let mut uploaded = None;
@@ -116,6 +113,17 @@ impl Inner {
                         file_length: up.file_length,
                         media_key_timestamp: up.media_key_timestamp,
                     });
+                    // A sticker sent from here can now be favourited on the user's other devices.
+                    if let (Content::Sticker { .. }, Some(u)) = (content, &uploaded) {
+                        let remote = RemoteSticker {
+                            direct_path: u.direct_path.clone(),
+                            media_key: convert::b64(&u.media_key),
+                            file_enc_sha256: convert::b64(&u.file_enc_sha256),
+                            file_length: u.file_length,
+                            mimetype: "image/webp".into(),
+                        };
+                        app.ingest_sticker(&convert::b64(&u.file_sha256), |s| s.remote = Some(remote));
+                    }
                 }
                 let thumb = match content {
                     Content::Image { thumb, .. } | Content::Video { thumb, .. } | Content::Document { thumb, .. } => {
@@ -125,13 +133,9 @@ impl Inner {
                 };
                 let built = convert::build(m, uploaded.as_ref(), thumb, timer)?;
                 if m.view_once {
-                    wa::Message {
-                        view_once_message: MessageField::some(wa::message::FutureProofMessage {
-                            message: MessageField::some(built),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }
+                    pb!(wa::Message {
+                        view_once_message: MessageField::some(pb!(wa::message::FutureProofMessage {
+                            message: MessageField::some(built) })) })
                 } else {
                     built
                 }
@@ -139,18 +143,18 @@ impl Inner {
         };
         if let Some(s) = &secret {
             proto.message_context_info =
-                MessageField::some(wa::MessageContextInfo { message_secret: Some(s.clone()), ..Default::default() });
+                MessageField::some(pb!(wa::MessageContextInfo { message_secret: Some(s.clone()) }));
         }
         if convert::needs_raw(&m.content) {
             let mut stored = Stored::of(&proto, secret.as_deref());
             stored.sender = client.pn().map(|j| jid_str(&j)).unwrap_or_default();
             let _ = app.store.set_media_params(&m.chat, &m.id, &stored);
         }
-        let mut options = SendOptions::default().with_message_id(m.id.clone());
+        let mut options = SendOptions::default().with_message_id(err(whatsapp_rust::MessageId::new(&m.id))?);
         if timer > 0 {
             options = options.with_ephemeral_expiration(timer);
         }
-        err(client.send_message_with_options(to, proto, options).await)?;
+        err(client.send(whatsapp_rust::SendRequest::new(&to, proto).with_options(options)).await)?;
         Ok(())
     }
 
@@ -177,13 +181,13 @@ impl Inner {
                 Ok(Value::Null)
             }
             NetOp::React { target, emoji } => {
-                err(client.send_reaction(parse_jid(&target.chat)?, self.key_of(&target), &emoji).await)?;
+                let a = self.addr_of(&target)?;
+                err(client.send_reaction(&a.r()?, &emoji).await)?;
                 Ok(Value::Null)
             }
             NetOp::Edit { target, text } => {
-                let to = parse_jid(&target.chat)?;
                 let content = match &target.content {
-                    Content::Text { .. } => wa::Message { conversation: Some(text.clone()), ..Default::default() },
+                    Content::Text { .. } => pb!(wa::Message { conversation: Some(text.clone()) }),
                     _ => {
                         // Captions are edited by resending the media message with the new caption.
                         let mut raw = self.stored(app, &target)?.message().ok_or_else(|| anyhow!("can't edit this message"))?;
@@ -197,46 +201,42 @@ impl Inner {
                         raw
                     }
                 };
-                err(client.edit_message(to, target.id.clone(), content).await)?;
+                let a = self.addr_of(&target)?;
+                err(client.edit_message(whatsapp_rust::EditRequest::new(a.r()?, content)).await)?;
                 Ok(Value::Null)
             }
             NetOp::Revoke { target } => {
-                let to = parse_jid(&target.chat)?;
-                let kind = match self.participant_of(&target) {
-                    Some(original_sender) => RevokeType::Admin { original_sender },
-                    None => RevokeType::Sender,
-                };
-                err(client.revoke_message(to, target.id.clone(), kind).await)?;
+                // Revoking someone else's group message is an admin revoke; the
+                // library picks the kind from the reference's author.
+                let a = self.addr_of(&target)?;
+                err(client.revoke_message(&a.r()?).await)?;
                 Ok(Value::Null)
             }
             NetOp::DeleteForMe { targets } => {
                 for m in targets {
-                    let chat = parse_jid(&m.chat)?;
-                    let who = self.participant_of(&m);
-                    err(client.chat_actions().delete_message_for_me(&chat, who.as_ref(), &m.id, m.from_me, true, Some(m.ts / 1000)).await)?;
+                    let a = self.addr_of(&m)?;
+                    err(client.chat_actions().delete_message_for_me(&a.r()?, true, Some(m.ts / 1000)).await)?;
                 }
                 Ok(Value::Null)
             }
             NetOp::Pin { target, secs } => {
-                let chat = parse_jid(&target.chat)?;
-                let key = self.key_of(&target);
+                let a = self.addr_of(&target)?;
                 if secs == 0 {
-                    err(client.unpin_message(chat, key).await)?;
+                    err(client.unpin_message(&a.r()?).await)?;
                 } else {
                     let d = if secs <= 86_400 { PinDuration::Hours24 } else if secs <= 7 * 86_400 { PinDuration::Days7 } else { PinDuration::Days30 };
-                    err(client.pin_message(chat, key, d).await)?;
+                    err(client.pin_message(&a.r()?, d).await)?;
                 }
                 Ok(Value::Null)
             }
             NetOp::Star { targets, on } => {
                 for m in targets {
-                    let chat = parse_jid(&m.chat)?;
-                    let who = self.participant_of(&m);
+                    let a = self.addr_of(&m)?;
                     let actions = client.chat_actions();
                     if on {
-                        err(actions.star_message(&chat, who.as_ref(), &m.id, m.from_me).await)?;
+                        err(actions.star_message(&a.r()?).await)?;
                     } else {
-                        err(actions.unstar_message(&chat, who.as_ref(), &m.id, m.from_me).await)?;
+                        err(actions.unstar_message(&a.r()?).await)?;
                     }
                 }
                 Ok(Value::Null)
@@ -248,7 +248,10 @@ impl Inner {
                 if secret.is_empty() {
                     bail!("This poll can only be voted on from your phone");
                 }
-                err(client.polls().vote(parse_jid(&target.chat)?, &target.id, &creator, &secret, &options).await)?;
+                let secret = err(whatsapp_rust::MessageSecret::try_from(secret))?;
+                let a = self.addr_of(&target)?;
+                let poll = err(whatsapp_rust::PollRef::new(a.r()?, &creator, &secret))?;
+                err(client.polls().vote(&poll, &options).await)?;
                 Ok(Value::Null)
             }
             NetOp::Rsvp { target, response } => {
@@ -265,7 +268,10 @@ impl Inner {
                     "declined" => R::NOT_GOING,
                     _ => R::UNKNOWN,
                 };
-                err(client.events().respond(parse_jid(&target.chat)?, &target.id, &creator, &secret, r, None).await)?;
+                let secret = err(whatsapp_rust::MessageSecret::try_from(secret))?;
+                let a = self.addr_of(&target)?;
+                let event = err(whatsapp_rust::EventRef::new(a.r()?, &creator, &secret))?;
+                err(client.events().respond(&event, r, None).await)?;
                 Ok(Value::Null)
             }
             NetOp::MarkRead { chat, msgs } => {
@@ -302,7 +308,7 @@ impl Inner {
                 let (token, path) = app.media.fresh(folder, &ext)?;
                 let file = std::fs::File::create(&path)?;
                 let d = downloadable(&raw).ok_or_else(|| anyhow!("nothing to download"))?;
-                match client.download_to_writer(d, file).await {
+                match client.download_to_writer(d, file, Default::default()).await {
                     Ok(_) => Ok(json!({ "token": token })),
                     Err(e) => {
                         let _ = std::fs::remove_file(&path);
@@ -320,9 +326,10 @@ impl Inner {
             // ── chats ──
             NetOp::Chat { chat, action, last } => {
                 let jid = parse_jid(&chat)?;
-                let range = last.as_ref().map(|m| {
-                    whatsapp_rust::features::message_range(m.ts / 1000, None, vec![(self.key_of(m), m.ts / 1000)])
-                });
+                let last_addr = last.as_ref().and_then(|m| self.addr_of(m).ok().map(|a| (a, m.ts / 1000)));
+                let range = last_addr
+                    .as_ref()
+                    .and_then(|(a, ts)| a.r().ok().map(|r| whatsapp_rust::features::message_range(*ts, None, [(r, *ts)])));
                 let actions = client.chat_actions();
                 match action {
                     ChatAction::Archive(true) => err(actions.archive_chat(&jid, range).await)?,
@@ -334,7 +341,13 @@ impl Inner {
                     ChatAction::Mute(until) => err(actions.mute_chat_until(&jid, until).await)?,
                     ChatAction::MarkRead(read) => err(actions.mark_chat_as_read(&jid, read, range).await)?,
                     ChatAction::Delete => err(actions.delete_chat(&jid, true, range).await)?,
-                    ChatAction::Clear => err(actions.clear_chat(&jid, true, true, range).await)?,
+                    ChatAction::Clear => {
+                        use whatsapp_rust::{ClearChatOptions, MediaDeletion, StarredMessages};
+                        let options = ClearChatOptions::default()
+                            .with_starred_messages(StarredMessages::Delete)
+                            .with_media(MediaDeletion::Delete);
+                        err(actions.clear_chat_with_options(&jid, options, range).await)?
+                    }
                 }
                 Ok(Value::Null)
             }
@@ -403,7 +416,7 @@ impl Inner {
             }
             NetOp::Profile(op) => {
                 match op {
-                    ProfileOp::Name { text } => err(client.profile().set_push_name(text.trim()).await)?,
+                    ProfileOp::Name { text } => drop(err(client.profile().set_push_name(text.trim()).await)?),
                     ProfileOp::About { text } => err(client.profile().set_status_text(&text).await)?,
                     ProfileOp::Photo { file } => match read_attachment(&file)? {
                         Some(bytes) => drop(err(client.profile().set_profile_picture(bytes).await)?),
@@ -448,6 +461,54 @@ impl Inner {
                 Ok(Value::Null)
             }
 
+            // ── sticker library ──
+            NetOp::StickerDownload { sticker } => {
+                let r = sticker.remote.as_ref().ok_or_else(|| anyhow!("WhatsApp didn't say where this sticker is stored"))?;
+                let params = err(whatsapp_rust::download::DownloadParams::encrypted(
+                    r.direct_path.clone(),
+                    &convert::unb64(&r.media_key),
+                    &convert::unb64(&sticker.id),
+                    &convert::unb64(&r.file_enc_sha256),
+                    r.file_length,
+                    MediaType::Sticker,
+                ))?;
+                let (token, path) = app.media.fresh("s", "webp")?;
+                let file = std::fs::File::create(&path)?;
+                match client.download_to_writer(&params, file, Default::default()).await {
+                    Ok(_) => Ok(json!({ "token": token })),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&path);
+                        Err(anyhow!("{e}"))
+                    }
+                }
+            }
+            NetOp::StickerFavorite { sticker, on } => {
+                // Stickers made in Ripple and never sent have no server copy; they stay local.
+                if let Some(r) = &sticker.remote {
+                    let value = convert::favorite_action(&sticker, r, on, now_ms());
+                    err(client.send_app_state_action(&whatsapp_rust::schemas::FAVORITE_STICKER, &[sticker.id.as_str()], &value).await)?;
+                }
+                Ok(Value::Null)
+            }
+            NetOp::StickerUnrecent { sticker } => {
+                if sticker.remote.is_some() {
+                    let value = convert::unrecent_action(&sticker, now_ms());
+                    err(client.send_app_state_action(&whatsapp_rust::schemas::REMOVE_RECENT_STICKER, &[sticker.id.as_str()], &value).await)?;
+                }
+                Ok(Value::Null)
+            }
+            NetOp::StickerInfo { target } => {
+                let found = self
+                    .stored(app, &target)
+                    .ok()
+                    .and_then(|s| s.message())
+                    .and_then(|m| convert::sticker_of_message(&m));
+                Ok(match found {
+                    Some(s) => json!({ "id": s.id, "remote": s.remote }),
+                    None => Value::Null,
+                })
+            }
+
             NetOp::Group(op) => self.group_op(app, client, op).await,
             NetOp::Community(op) => self.community_op(app, client, op).await,
         }
@@ -465,7 +526,7 @@ impl Inner {
                 let mut options = GroupCreateOptions::new(subject.trim());
                 options.participants = members(&participants)?
                     .into_iter()
-                    .map(|jid| GroupParticipantOptions { jid, phone_number: None, privacy: None })
+                    .map(GroupParticipantOptions::new)
                     .collect();
                 options.linked_parent = parent.as_deref().map(parse_jid).transpose()?;
                 let res = err(groups.create_group(options).await)?;
@@ -475,7 +536,7 @@ impl Inner {
                 json!({ "id": id })
             }
             GroupOp::Refresh { id } => {
-                let md = err(groups.get_metadata(&parse_jid(&id)?).await)?;
+                let md = err(groups.fetch_metadata(&parse_jid(&id)?).await)?;
                 merge_group(app, group_from(self, &me, &md));
                 Value::Null
             }
@@ -522,7 +583,7 @@ impl Inner {
                 json!({
                     "id": jid_str(&md.id),
                     "subject": md.subject,
-                    "size": md.size.unwrap_or(md.participants.len() as u32),
+                    "size": md.participant_count.unwrap_or(md.participants.len() as u32),
                     "description": md.description,
                 })
             }
@@ -530,7 +591,7 @@ impl Inner {
                 use whatsapp_rust::features::JoinGroupResult as J;
                 match err(groups.join_with_invite_code(code.trim()).await)? {
                     J::Joined(jid) => {
-                        if let Ok(md) = groups.get_metadata(&jid).await {
+                        if let Ok(md) = groups.fetch_metadata(&jid).await {
                             merge_group(app, group_from(self, &me, &md));
                         }
                         json!({ "id": jid_str(&jid) })
@@ -569,8 +630,10 @@ impl Inner {
         let list = |jids: &[String]| -> Result<Vec<WaJid>> { jids.iter().map(|j| parse_jid(j)).collect() };
         Ok(match op {
             CommunityOp::Create { name, description } => {
-                let mut options = whatsapp_rust::features::CreateCommunityOptions::new(name.trim());
-                options.description = (!description.trim().is_empty()).then_some(description);
+                let mut options = err(whatsapp_rust::features::CreateCommunityOptions::new(name.trim()))?;
+                if !description.trim().is_empty() {
+                    options = options.with_description(err(whatsapp_rust::features::GroupDescription::new(description))?);
+                }
                 let res = err(community.create(options).await)?;
                 let g = group_from(self, &me, &res.metadata);
                 let id = g.id.clone();
@@ -579,7 +642,7 @@ impl Inner {
                 let mut announcement = Value::Null;
                 if let Ok(subs) = community.get_subgroups(&res.metadata.id).await {
                     for s in subs.iter().filter(|s| s.is_default_sub_group) {
-                        if let Ok(md) = client.groups().get_metadata(&s.id).await {
+                        if let Ok(md) = client.groups().fetch_metadata(&s.id).await {
                             let mut sg = group_from(self, &me, &md);
                             sg.parent = Some(id.clone());
                             sg.is_announcement = true;

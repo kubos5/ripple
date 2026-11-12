@@ -15,9 +15,9 @@ import { Avatar, Icon, IconButton, type MenuEntry, Switch as Toggle, openMenu } 
 
 function Head(props: { title: string; back?: () => void }) {
   return (
-    <div class="panel-head">
-      <Show when={props.back} fallback={<IconButton icon="x" tip="Close" onClick={() => setState("panel", null)} />}>
-        <IconButton icon="arrow-left" tip="Back" onClick={props.back} />
+    <div class="panel-head drag">
+      <Show when={props.back} fallback={<IconButton class="no-drag" icon="x" tip="Close" onClick={() => setState("panel", null)} />}>
+        <IconButton class="no-drag" icon="arrow-left" tip="Back" onClick={props.back} />
       </Show>
       <h2>{props.title}</h2>
     </div>

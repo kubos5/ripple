@@ -18,7 +18,7 @@
   background: var(--bg-rail);
   border-right: 1px solid var(--line);
 }
-:root[data-shell="tauri"][data-platform="macos"] .rail { padding-top: 46px; }
+:root[data-shell="tauri"][data-platform="macos"] .rail { padding-top: var(--header-h); }
 .rail-mark {
   width: 36px;
   height: 36px;
@@ -34,20 +34,20 @@
   height: 44px;
   border-radius: var(--r-md);
   color: var(--text-3);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast);
 }
 .rail-btn .icon { font-size: 23px; }
 .rail-btn:hover { background: var(--surface-2); color: var(--text); }
-.rail-btn:active { transform: scale(0.93); }
+.rail-btn:active { transform: scale(0.97); transition: none; }
 .rail-btn.on { color: var(--accent); background: var(--accent-soft); }
 .rail-btn::before {
   content: "";
   position: absolute;
-  left: -10px;
+  left: calc((44px - var(--rail-w)) / 2);
   top: 50%;
   width: 4px;
   height: 20px;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 2px 2px 0;
   background: var(--accent);
   transform: translateY(-50%) scaleY(0);
   transition: transform var(--t-slow) var(--spring);
@@ -67,11 +67,11 @@
 .rail-spacer { flex: 1; align-self: stretch; }
 .rail-me {
   margin-top: 6px;
-  border-radius: 50%;
-  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast);
+  border-radius: 30%;
+  transition: box-shadow var(--t-fast);
 }
 .rail-me:hover { box-shadow: 0 0 0 2px var(--bg-rail), 0 0 0 4px var(--line-strong); }
-.rail-me:active { transform: scale(0.94); }
+.rail-me:active { transform: scale(0.97); transition: none; }
 
 @keyframes badge-pop { from { transform: scale(0.4); } }
 
@@ -154,7 +154,7 @@
 .search input:focus { background: var(--surface-1); border-color: var(--accent); }
 .search .kbd-hint { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; gap: 3px; pointer-events: none; }
 .search:focus-within .kbd-hint { display: none; }
-.search .clear { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; border-radius: 50%; }
+.search .clear { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; border-radius: var(--r-round); }
 
 .chips {
   display: flex;
@@ -252,7 +252,7 @@
 .list-row .glyph {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   display: grid;
   place-items: center;
   background: var(--accent-soft);
@@ -267,7 +267,7 @@
   gap: 14px;
   width: calc(100% - 16px);
   margin: 0 8px 2px;
-  padding: 10px 12px 10px 24px;
+  padding: 10px 12px 10px 27px;
   border-radius: var(--r-md);
   color: var(--text-2);
   font-weight: 560;

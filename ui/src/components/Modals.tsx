@@ -148,7 +148,7 @@ function NewChat() {
   };
   const action = (icon: IconName, label: string, run: () => void) => (
     <button class="pick-row" onClick={run}>
-      <span class="glyph" style={{ width: "40px", height: "40px", "border-radius": "50%", display: "grid", "place-items": "center", background: "var(--accent-soft)", color: "var(--accent)" }}><Icon name={icon} /></span>
+      <span class="glyph" style={{ width: "40px", height: "40px", "border-radius": "var(--r-round)", display: "grid", "place-items": "center", background: "var(--accent-soft)", color: "var(--accent)" }}><Icon name={icon} /></span>
       <div class="title">{label}</div>
     </button>
   );
@@ -172,7 +172,7 @@ function NewChat() {
         </Show>
         <Show when={looksLikeNumber() && !list().length}>
           <button class="pick-row" disabled={busy()} onClick={() => void tryNumber()}>
-            <span style={{ width: "40px", height: "40px", "border-radius": "50%", display: "grid", "place-items": "center", background: "var(--accent-soft)", color: "var(--accent)" }}>
+            <span style={{ width: "40px", height: "40px", "border-radius": "var(--r-round)", display: "grid", "place-items": "center", background: "var(--accent-soft)", color: "var(--accent)" }}>
               <Show when={busy()} fallback={<Icon name="chat-circle" />}><div class="spinner" /></Show>
             </span>
             <div class="grow"><div class="title">Message +{digits()}</div><div class="sub">Check if this number is on WhatsApp</div></div>

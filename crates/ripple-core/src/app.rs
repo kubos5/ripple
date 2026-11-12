@@ -1,7 +1,7 @@
 //! The heart of Ripple: owns the store, answers UI requests, applies what the
 //! network reports, and tells the UI what changed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -16,6 +16,8 @@ use crate::model::*;
 use crate::store::Store;
 
 const PAGE: usize = 60;
+/// How many recently sent stickers the picker shows.
+pub const RECENT_STICKERS: usize = 48;
 
 pub struct App {
     pub store: Store,
@@ -32,6 +34,8 @@ pub struct App {
     settings: RwLock<Settings>,
     badge: AtomicU32,
     history_asked: Mutex<HashMap<Jid, i64>>,
+    /// Library stickers being downloaded (or that failed this session).
+    sticker_jobs: Mutex<HashSet<String>>,
     #[cfg(feature = "voice")]
     recorder: Mutex<Option<crate::voice::Recorder>>,
 }
@@ -53,7 +57,16 @@ impl App {
         std::fs::create_dir_all(&root).with_context(|| format!("create {}", root.display()))?;
         let store = Store::open(&root.join("app.db"))?;
         let media = MediaDir::new(root.join("media"))?;
-        let settings = store.meta::<Settings>("settings").unwrap_or_default();
+        let settings = match store.meta::<Settings>("settings") {
+            Some(saved) => {
+                let (settings, changed) = saved.migrate();
+                if changed {
+                    let _ = store.set_meta("settings", &settings);
+                }
+                settings
+            }
+            None => Settings::default(),
+        };
         let me = store.meta::<String>("me").unwrap_or_default();
         let chats = store.chats().into_iter().map(|c| (c.id.clone(), c)).collect();
         Ok(Arc::new(App {
@@ -71,6 +84,7 @@ impl App {
             settings: RwLock::new(settings),
             badge: AtomicU32::new(u32::MAX),
             history_asked: Mutex::new(HashMap::new()),
+            sticker_jobs: Mutex::new(HashSet::new()),
             #[cfg(feature = "voice")]
             recorder: Mutex::new(None),
         }))
@@ -745,8 +759,11 @@ impl App {
                 m.token = Some(tok.clone());
                 m.mime = "image/webp".into();
                 m.size = bytes.len() as u64;
-                let st = Sticker { token: tok, width: 512, height: 512, animated, favorite: false, used: 0 };
-                let _ = self.store.touch_sticker(&st, now_ms());
+                self.ingest_sticker(&file_hash(&bytes), |s| {
+                    s.token = Some(tok);
+                    s.animated = animated;
+                    s.used = now_ms();
+                });
                 Content::Sticker { media: m, width: 512, height: 512, animated }
             }
             _ => Content::Document {
@@ -770,12 +787,21 @@ impl App {
             Outgoing::Media { file, kind, caption, view_once, album } => {
                 (self.build_media(&file, &kind, caption)?, view_once, album)
             }
-            Outgoing::Sticker { token } => {
+            Outgoing::Sticker { id } => {
+                let row = self.store.sticker(&id).or_else(|| self.store.sticker_by_token(&id)).ok_or_else(|| anyhow!("Sticker is missing"))?;
+                let token = row.token.clone().ok_or_else(|| anyhow!("This sticker is still downloading"))?;
                 let path = self.media.path(&token).filter(|p| p.exists()).ok_or_else(|| anyhow!("Sticker is missing"))?;
                 let bytes = std::fs::read(&path)?;
                 let animated = media::is_animated_webp(&bytes);
-                let st = Sticker { token: token.clone(), width: 512, height: 512, animated, favorite: false, used: 0 };
-                let _ = self.store.touch_sticker(&st, now_ms());
+                // Stickers saved by older versions were keyed by file token; move them to their hash.
+                let hash = file_hash(&bytes);
+                if row.id != hash {
+                    let _ = self.store.remove_sticker(&row.id);
+                }
+                self.ingest_sticker(&hash, |s| {
+                    let used = now_ms();
+                    *s = Sticker { id: hash.clone(), used, animated, ..row.clone() };
+                });
                 let m = Media {
                     token: Some(token),
                     mime: "image/webp".into(),
@@ -1227,24 +1253,57 @@ impl App {
             }
 
             // ── stickers ──
-            Request::Stickers => val(self.store.stickers()),
-            Request::StickerFavorite { token, on } => {
-                let st = Sticker { token: token.clone(), width: 512, height: 512, ..Default::default() };
-                let known = self.store.stickers().iter().any(|s| s.token == token);
-                if !known {
-                    self.store.touch_sticker(&st, now_ms())?;
-                }
-                self.store.favorite_sticker(&token, on)?;
+            Request::Stickers => val(self.sticker_list()),
+            Request::StickerFavorite { id, on } => {
+                let s = self.store.update_sticker(&id, |s| s.favorite = on)?;
+                self.emit(UiEvent::Stickers);
+                self.fire_quiet(NetOp::StickerFavorite { sticker: Box::new(s), on });
                 val(self.store.stickers())
             }
-            Request::StickerRemove { token } => {
-                self.store.remove_sticker(&token)?;
+            Request::StickerForget { id } => {
+                if let Some(s) = self.store.sticker(&id) {
+                    if s.used > 0 {
+                        self.fire_quiet(NetOp::StickerUnrecent { sticker: Box::new(s.clone()) });
+                    }
+                    if s.favorite {
+                        self.store.update_sticker(&id, |x| x.used = 0)?;
+                    } else {
+                        self.store.remove_sticker(&id)?;
+                    }
+                    self.emit(UiEvent::Stickers);
+                }
                 val(self.store.stickers())
             }
             Request::StickerCreate { file } => {
-                let content = self.build_media(&file, "sticker", String::new())?;
-                let token = content.media().and_then(|m| m.token.clone());
-                val(json!({ "token": token, "stickers": self.store.stickers() }))
+                self.build_media(&file, "sticker", String::new())?;
+                val(json!({ "stickers": self.store.stickers() }))
+            }
+            Request::StickerFromMessage { chat, id } => {
+                let m = self.store.message(&chat, &id).ok_or_else(|| anyhow!("Message not found"))?;
+                let Content::Sticker { media, animated, .. } = &m.content else { bail!("That message isn't a sticker") };
+                let token = media.token.clone().filter(|_| media.state == MediaState::Ready).ok_or_else(|| anyhow!("Download the sticker first"))?;
+                let path = self.media.path(&token).ok_or_else(|| anyhow!("Sticker is missing"))?;
+                let bytes = std::fs::read(&path)?;
+                let info = self.net().exec(NetOp::StickerInfo { target: Box::new(m.clone()) }).await.unwrap_or(Value::Null);
+                let sid = info.get("id").and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| file_hash(&bytes));
+                let remote: Option<RemoteSticker> = info.get("remote").and_then(|r| serde_json::from_value(r.clone()).ok());
+                // Keep a copy: cleared chat media must not take the favourite with it.
+                let own = match self.store.sticker(&sid).and_then(|s| s.token).filter(|t| self.media.path(t).is_some_and(|p| p.exists())) {
+                    Some(t) => t,
+                    None => self.media.write("s", "webp", &bytes)?,
+                };
+                let animated = *animated;
+                let s = self.store.update_sticker(&sid, |s| {
+                    s.favorite = true;
+                    s.token = Some(own);
+                    s.animated = animated;
+                    if s.remote.is_none() {
+                        s.remote = remote;
+                    }
+                })?;
+                self.emit(UiEvent::Stickers);
+                self.fire_quiet(NetOp::StickerFavorite { sticker: Box::new(s), on: true });
+                val(self.store.stickers())
             }
 
             // ── voice notes ──
@@ -1551,6 +1610,84 @@ impl App {
                 Ok(Value::Null)
             }
         }
+    }
+
+    // ───────────────────────────── stickers ─────────────────────────────
+
+    /// Creates or updates a library sticker and tells the UI.
+    pub fn ingest_sticker(&self, id: &str, f: impl FnOnce(&mut Sticker)) {
+        if id.is_empty() {
+            return;
+        }
+        match self.store.update_sticker(id, f) {
+            Ok(_) => self.emit(UiEvent::Stickers),
+            Err(e) => log::warn!("sticker update failed: {e:#}"),
+        }
+    }
+
+    /// A sticker was sent from one of the user's devices at `ts`.
+    pub fn sticker_sent(&self, id: &str, ts: i64, remote: Option<RemoteSticker>, animated: bool) {
+        self.ingest_sticker(id, |s| {
+            s.used = s.used.max(ts);
+            s.animated |= animated;
+            if s.remote.is_none() {
+                s.remote = remote;
+            }
+        });
+    }
+
+    /// Another device removed a sticker from "Recent" (if not sent again since `before`).
+    pub fn sticker_unrecent(&self, id: &str, before: Option<i64>) {
+        if self.store.sticker(id).is_some_and(|s| s.used > 0 && before.is_none_or(|b| s.used <= b)) {
+            self.ingest_sticker(id, |s| s.used = 0);
+        }
+    }
+
+    /// The library, starting downloads for stickers whose file isn't here yet.
+    fn sticker_list(self: &Arc<Self>) -> Vec<Sticker> {
+        let list = self.store.stickers();
+        let absent = |s: &&Sticker| {
+            s.remote.is_some() && s.token.as_deref().and_then(|t| self.media.path(t)).is_none_or(|p| !p.exists())
+        };
+        // Every favourite, plus the recents the picker actually shows.
+        let missing = list
+            .iter()
+            .filter(|s| s.favorite)
+            .filter(absent)
+            .chain(list.iter().filter(|s| s.used > 0).take(RECENT_STICKERS).filter(absent))
+            .cloned()
+            .collect::<Vec<_>>();
+        for s in missing {
+            self.fetch_sticker(s);
+        }
+        list
+    }
+
+    fn fetch_sticker(self: &Arc<Self>, s: Sticker) {
+        if !lock(&self.sticker_jobs).insert(s.id.clone()) {
+            return;
+        }
+        let app = self.clone();
+        tokio::spawn(async move {
+            let id = s.id.clone();
+            match app.net().exec(NetOp::StickerDownload { sticker: Box::new(s) }).await {
+                Ok(v) => {
+                    let Some(token) = v.get("token").and_then(|t| t.as_str()).map(String::from) else { return };
+                    let animated = app
+                        .media
+                        .path(&token)
+                        .and_then(|p| std::fs::read(p).ok())
+                        .is_some_and(|b| media::is_animated_webp(&b));
+                    app.ingest_sticker(&id, |s| {
+                        s.token = Some(token);
+                        s.animated = animated;
+                    });
+                    lock(&app.sticker_jobs).remove(&id);
+                }
+                // Left in `sticker_jobs` so a broken file isn't retried on every open.
+                Err(e) => log::info!("sticker download failed: {e:#}"),
+            }
+        });
     }
 
     // ───────────────────────────── voice notes ─────────────────────────────

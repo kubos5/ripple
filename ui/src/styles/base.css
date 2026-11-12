@@ -96,7 +96,7 @@ textarea:focus-visible,
 }
 ::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 10px;
+  border-radius: 5px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
@@ -150,10 +150,10 @@ textarea:focus-visible,
   white-space: nowrap;
   background: var(--surface-2);
   color: var(--text);
-  transition: background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out), opacity var(--t-fast);
+  transition: background var(--t-fast) var(--ease-out), opacity var(--t-fast);
 }
 .btn:hover { background: var(--surface-3); }
-.btn:active { transform: scale(0.97); }
+.btn:active { transform: scale(0.97); transition: none; }
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 .btn .icon { font-size: 18px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
@@ -174,10 +174,10 @@ textarea:focus-visible,
   border-radius: var(--r-sm);
   color: var(--text-2);
   flex: none;
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast);
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
-.icon-btn:active { transform: scale(0.92); }
+.icon-btn:active { transform: scale(0.97); transition: none; }
 .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
 .icon-btn.sm { width: 30px; height: 30px; }
 .icon-btn.sm .icon { font-size: 18px; }
@@ -228,10 +228,12 @@ textarea.field {
   left: 3px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
-  background: var(--text-2);
+  border-radius: 4px;
+  background: var(--text-3);
   transition: transform var(--t-slow) var(--spring), background var(--t-base);
 }
+:root[data-theme="light"] .switch:not([aria-checked="true"]) { background: #d9d9d6; }
+:root[data-theme="light"] .switch:not([aria-checked="true"])::after { background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16); }
 .switch[aria-checked="true"] { background: var(--accent); }
 .switch[aria-checked="true"]::after { transform: translateX(16px); background: var(--accent-ink); }
 
@@ -247,10 +249,10 @@ textarea.field {
   color: var(--text-2);
   background: var(--surface-1);
   white-space: nowrap;
-  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast), color var(--t-fast);
 }
 .chip:hover { background: var(--surface-2); color: var(--text); }
-.chip:active { transform: scale(0.96); }
+.chip:active { transform: scale(0.97); transition: none; }
 .chip.on { background: var(--accent-soft); color: var(--accent); }
 
 .badge {
@@ -275,7 +277,7 @@ textarea.field {
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: 3px;
   background: var(--surface-2);
   border: 1px solid var(--line);
   font-size: var(--fs-11);
@@ -291,7 +293,7 @@ textarea.field {
   position: relative;
   width: var(--size);
   height: var(--size);
-  border-radius: 50%;
+  border-radius: 30%;
   flex: none;
   display: grid;
   place-items: center;
@@ -302,8 +304,8 @@ textarea.field {
   background: color-mix(in oklab, var(--tone) var(--tone-mix), var(--surface-1));
   overflow: hidden;
 }
-.avatar.group { border-radius: 32%; }
-.avatar.community { border-radius: 26%; }
+.avatar.group { border-radius: 24%; }
+.avatar.community { border-radius: 18%; }
 .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .avatar .icon { font-size: calc(var(--size) * 0.5); }
 .avatar-wrap { position: relative; flex: none; }
@@ -325,8 +327,6 @@ textarea.field {
 @keyframes pop-out { to { opacity: 0; transform: scale(0.97); } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-8px); } }
-@keyframes slide-in-right { from { transform: translateX(24px); opacity: 0; } }
-@keyframes slide-out-right { to { transform: translateX(24px); opacity: 0; } }
 
 .menu {
   position: fixed;
@@ -350,7 +350,7 @@ textarea.field {
   width: 100%;
   height: 34px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: var(--fs-14);
   text-align: left;
   white-space: nowrap;
@@ -452,7 +452,7 @@ textarea.field {
   top: calc(100% + 8px);
   transform: translate(-50%, -3px);
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--text);
   color: var(--bg);
   font-size: var(--fs-12);

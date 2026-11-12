@@ -623,7 +623,14 @@ pub enum Session {
 pub struct Settings {
     /// `system`, `light` or `dark`.
     pub theme: String,
+    /// `mono` (white on dark, black on light) or a colour preset.
     pub accent: String,
+    /// Interface typeface: `system` or one of the bundled fonts.
+    pub font: String,
+    /// Bumped when defaults change, so stored settings can be migrated once.
+    /// Missing in older saves, so it reads as 0 there rather than the current value.
+    #[serde(default)]
+    pub design: u32,
     /// UI scale multiplier applied to the base font size.
     pub text_scale: f32,
     pub compact: bool,
@@ -650,7 +657,9 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: "system".into(),
-            accent: "tidal".into(),
+            accent: "mono".into(),
+            font: "system".into(),
+            design: Settings::DESIGN,
             text_scale: 1.0,
             compact: false,
             enter_sends: true,
@@ -669,6 +678,27 @@ impl Default for Settings {
             sidebar_width: 348,
             quick_reactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"].map(String::from).to_vec(),
         }
+    }
+}
+
+impl Settings {
+    /// Current design revision. 2: monochrome accent and system font by default.
+    pub const DESIGN: u32 = 2;
+
+    /// Brings settings saved by an older version up to the current defaults,
+    /// leaving any choice the user made away from the old defaults alone.
+    pub fn migrate(mut self) -> (Settings, bool) {
+        if self.design >= Self::DESIGN {
+            return (self, false);
+        }
+        if self.accent == "tidal" || self.accent.is_empty() {
+            self.accent = "mono".into();
+        }
+        if self.font.is_empty() {
+            self.font = "system".into();
+        }
+        self.design = Self::DESIGN;
+        (self, true)
     }
 }
 
@@ -699,15 +729,42 @@ impl Default for Privacy {
     }
 }
 
+/// A sticker in the user's library (recents and favourites).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Sticker {
-    pub token: String,
+    /// Base64 SHA-256 of the sticker file: the id WhatsApp syncs favourites and
+    /// recents by. Stickers saved by older versions use their file token.
+    pub id: String,
+    /// Local file, once downloaded.
+    pub token: Option<String>,
     pub width: u32,
     pub height: u32,
     pub animated: bool,
     pub favorite: bool,
+    /// When it was last sent (ms); 0 keeps it out of "Recent".
     pub used: i64,
+    /// Where WhatsApp keeps the file, for downloading and for syncing favourites.
+    pub remote: Option<RemoteSticker>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RemoteSticker {
+    pub direct_path: String,
+    /// Base64.
+    pub media_key: String,
+    /// Base64.
+    pub file_enc_sha256: String,
+    pub file_length: u64,
+    pub mimetype: String,
+}
+
+/// Base64 SHA-256 of a file, the way WhatsApp identifies stickers.
+pub fn file_hash(bytes: &[u8]) -> String {
+    use base64::Engine;
+    use sha2::Digest;
+    base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(bytes))
 }
 
 #[cfg(test)]
@@ -744,6 +801,19 @@ mod tests {
         let back: Content = serde_json::from_str(&json).unwrap();
         assert_eq!(back.kind(), "gif");
         assert_eq!(back.summary(), "hi");
+    }
+
+    #[test]
+    fn settings_migrate_once() {
+        let old: Settings = serde_json::from_str(r#"{"theme":"dark","accent":"tidal"}"#).unwrap();
+        let (s, changed) = old.migrate();
+        assert!(changed);
+        assert_eq!((s.accent.as_str(), s.font.as_str(), s.theme.as_str()), ("mono", "system", "dark"));
+        let (again, changed) = s.clone().migrate();
+        assert!(!changed && again.accent == "mono");
+        let custom: Settings = serde_json::from_str(r#"{"accent":"coral"}"#).unwrap();
+        assert_eq!(custom.migrate().0.accent, "coral", "a colour the user picked is kept");
+        assert!(!Settings::default().migrate().1);
     }
 
     #[test]

@@ -592,7 +592,7 @@ export function messageMenu(m: Message): MenuEntry[] {
     { label: "Save as…", icon: "download-simple", hidden: !hasMedia || m.viewOnce || (c as { media: Media }).media.state !== "ready", run: () => void saveMedia(m) },
     {
       label: "Add to sticker favourites", icon: "heart", hidden: c.type !== "sticker" || !(c as ContentOf<"sticker">).media.token,
-      run: async () => { await act("stickerFavorite", { token: (c as ContentOf<"sticker">).media.token, on: true }); toast("Added to favourites", "success"); },
+      run: async () => { if (await act("stickerFromMessage", { chat: m.chat, id: m.id })) toast("Added to favourites", "success"); },
     },
     { label: "Message info", icon: "info", hidden: !m.fromMe || gone || sys, run: () => openModal("messageInfo", { chat: m.chat, id: m.id }) },
     { sep: true, hidden: sys },

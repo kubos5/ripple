@@ -9,6 +9,18 @@ use whatsapp_rust::wacore::proto_helpers::MessageExt;
 
 use crate::model::*;
 
+/// Builds a protobuf message field by field. The generated types are
+/// non-exhaustive, so struct literals are not allowed outside their crate.
+macro_rules! pb {
+    ($ty:path { $($field:ident : $value:expr),* $(,)? }) => {{
+        #[allow(clippy::field_reassign_with_default)]
+        let mut v = <$ty>::default();
+        $( v.$field = $value; )*
+        v
+    }};
+}
+pub(crate) use pb;
+
 pub fn b64(bytes: &[u8]) -> String {
     B64.encode(bytes)
 }
@@ -397,6 +409,90 @@ impl Stored {
     }
 }
 
+/// A timestamp that may be in seconds or milliseconds, as milliseconds.
+pub fn ms(ts: i64) -> i64 {
+    if ts > 0 && ts < 100_000_000_000 { ts * 1000 } else { ts }
+}
+
+fn remote_sticker(
+    direct_path: &Option<String>,
+    media_key: &Option<Vec<u8>>,
+    file_enc_sha256: &Option<Vec<u8>>,
+    file_length: Option<u64>,
+    mimetype: &Option<String>,
+) -> Option<RemoteSticker> {
+    Some(RemoteSticker {
+        direct_path: direct_path.clone().filter(|p| !p.is_empty())?,
+        media_key: b64(media_key.as_ref().filter(|k| !k.is_empty())?),
+        file_enc_sha256: b64(file_enc_sha256.as_ref().filter(|h| !h.is_empty())?),
+        file_length: file_length.unwrap_or(0),
+        mimetype: mimetype.clone().unwrap_or_else(|| "image/webp".into()),
+    })
+}
+
+/// A library entry for a sticker: id (file hash), where it is stored, whether animated.
+pub struct StickerIdent {
+    pub id: String,
+    pub remote: Option<RemoteSticker>,
+    pub animated: bool,
+}
+
+/// The library identity of a sticker message. Lottie stickers are skipped:
+/// Ripple can't draw them.
+pub fn sticker_of_message(m: &wa::Message) -> Option<StickerIdent> {
+    let x = m.get_base_message().sticker_message.as_option()?;
+    if x.is_lottie.unwrap_or(false) {
+        return None;
+    }
+    let hash = x.file_sha256.as_ref().filter(|h| !h.is_empty())?;
+    Some(StickerIdent {
+        id: b64(hash),
+        remote: remote_sticker(&x.direct_path, &x.media_key, &x.file_enc_sha256, x.file_length, &x.mimetype),
+        animated: x.is_animated.unwrap_or(false),
+    })
+}
+
+/// The library identity of a recent sticker listed in history sync.
+pub fn sticker_of_metadata(x: &wa::StickerMetadata) -> Option<StickerIdent> {
+    if x.is_lottie.unwrap_or(false) {
+        return None;
+    }
+    let hash = x.file_sha256.as_ref().filter(|h| !h.is_empty())?;
+    Some(StickerIdent {
+        id: b64(hash),
+        remote: remote_sticker(&x.direct_path, &x.media_key, &x.file_enc_sha256, x.file_length, &x.mimetype),
+        animated: false,
+    })
+}
+
+/// Where a favourited sticker is stored, from a synced favourite action.
+pub fn sticker_of_action(x: &wa::sync_action_value::StickerAction) -> Option<RemoteSticker> {
+    remote_sticker(&x.direct_path, &x.media_key, &x.file_enc_sha256, x.file_length, &x.mimetype)
+}
+
+/// The favourite action WhatsApp syncs for a sticker.
+pub fn favorite_action(s: &Sticker, r: &RemoteSticker, on: bool, now: i64) -> wa::SyncActionValue {
+    let act = pb!(wa::sync_action_value::StickerAction {
+        direct_path: Some(r.direct_path.clone()),
+        media_key: Some(unb64(&r.media_key)),
+        file_enc_sha256: Some(unb64(&r.file_enc_sha256)),
+        file_length: Some(r.file_length),
+        mimetype: Some(r.mimetype.clone()),
+        width: Some(s.width),
+        height: Some(s.height),
+        is_favorite: Some(on),
+        is_lottie: Some(false),
+        is_avatar_sticker: Some(false)
+    });
+    pb!(wa::SyncActionValue { sticker_action: MessageField::some(act), timestamp: Some(now) })
+}
+
+/// The action that drops a sticker from "Recent" on every device.
+pub fn unrecent_action(s: &Sticker, now: i64) -> wa::SyncActionValue {
+    let act = pb!(wa::sync_action_value::RemoveRecentStickerAction { last_sticker_sent_ts: Some(s.used) });
+    pb!(wa::SyncActionValue { remove_recent_sticker_action: MessageField::some(act), timestamp: Some(now) })
+}
+
 /// Whether a message is worth keeping in its raw form.
 pub fn needs_raw(c: &Content) -> bool {
     c.media().is_some() || matches!(c, Content::Poll { .. } | Content::Event { .. })
@@ -425,7 +521,7 @@ fn context_for(m: &Message) -> Option<wa::ContextInfo> {
         if !q.sender.is_empty() {
             ctx.participant = Some(q.sender.clone());
         }
-        ctx.quoted_message = MessageField::some(wa::Message { conversation: Some(q.text.clone()), ..Default::default() });
+        ctx.quoted_message = MessageField::some(pb!(wa::Message { conversation: Some(q.text.clone()) }));
     }
     ctx.mentioned_jid = m.mentions.clone();
     if m.forwarded > 0 {
@@ -449,7 +545,7 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
             if ctx.is_none() && preview.is_none() {
                 msg.conversation = Some(text.clone());
             } else {
-                let mut x = wa::message::ExtendedTextMessage { text: Some(text.clone()), ..Default::default() };
+                let mut x = pb!(wa::message::ExtendedTextMessage { text: Some(text.clone()) });
                 if let Some(p) = preview {
                     x.matched_text = Some(p.url.clone());
                     x.title = Some(p.title.clone());
@@ -462,7 +558,7 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
         }
         Content::Image { media, caption, width, height, .. } => {
             let u = need()?;
-            msg.image_message = MessageField::some(wa::message::ImageMessage {
+            msg.image_message = MessageField::some(pb!(wa::message::ImageMessage {
                 url: Some(u.url.clone()),
                 direct_path: Some(u.direct_path.clone()),
                 media_key: Some(u.media_key.clone()),
@@ -476,13 +572,11 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
                 height: Some(*height),
                 jpeg_thumbnail: thumb_jpeg,
                 view_once: m.view_once.then_some(true),
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Video { media, caption, width, height, duration, gif, .. } => {
             let u = need()?;
-            msg.video_message = MessageField::some(wa::message::VideoMessage {
+            msg.video_message = MessageField::some(pb!(wa::message::VideoMessage {
                 url: Some(u.url.clone()),
                 direct_path: Some(u.direct_path.clone()),
                 media_key: Some(u.media_key.clone()),
@@ -498,13 +592,11 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
                 gif_playback: gif.then_some(true),
                 jpeg_thumbnail: thumb_jpeg,
                 view_once: m.view_once.then_some(true),
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Audio { media, duration, voice, waveform } => {
             let u = need()?;
-            msg.audio_message = MessageField::some(wa::message::AudioMessage {
+            msg.audio_message = MessageField::some(pb!(wa::message::AudioMessage {
                 url: Some(u.url.clone()),
                 direct_path: Some(u.direct_path.clone()),
                 media_key: Some(u.media_key.clone()),
@@ -516,13 +608,11 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
                 seconds: Some(*duration),
                 ptt: Some(*voice),
                 waveform: (!waveform.is_empty()).then(|| waveform.clone()),
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Document { media, name, caption, .. } => {
             let u = need()?;
-            msg.document_message = MessageField::some(wa::message::DocumentMessage {
+            msg.document_message = MessageField::some(pb!(wa::message::DocumentMessage {
                 url: Some(u.url.clone()),
                 direct_path: Some(u.direct_path.clone()),
                 media_key: Some(u.media_key.clone()),
@@ -535,13 +625,11 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
                 title: Some(name.clone()),
                 caption: (!caption.is_empty()).then(|| caption.clone()),
                 jpeg_thumbnail: thumb_jpeg,
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Sticker { width, height, animated, .. } => {
             let u = need()?;
-            msg.sticker_message = MessageField::some(wa::message::StickerMessage {
+            msg.sticker_message = MessageField::some(pb!(wa::message::StickerMessage {
                 url: Some(u.url.clone()),
                 direct_path: Some(u.direct_path.clone()),
                 media_key: Some(u.media_key.clone()),
@@ -553,37 +641,29 @@ pub fn build(m: &Message, up: Option<&Uploaded>, thumb_jpeg: Option<Vec<u8>>, ep
                 width: Some(*width),
                 height: Some(*height),
                 is_animated: Some(*animated),
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Location { lat, lng, name, address, .. } => {
-            msg.location_message = MessageField::some(wa::message::LocationMessage {
+            msg.location_message = MessageField::some(pb!(wa::message::LocationMessage {
                 degrees_latitude: Some(*lat),
                 degrees_longitude: Some(*lng),
                 name: (!name.is_empty()).then(|| name.clone()),
                 address: (!address.is_empty()).then(|| address.clone()),
-                context_info: field(&ctx),
-                ..Default::default()
-            });
+                context_info: field(&ctx) }));
         }
         Content::Contacts { cards } => {
-            let one = |c: &ContactCard| wa::message::ContactMessage {
+            let one = |c: &ContactCard| pb!(wa::message::ContactMessage {
                 display_name: Some(c.name.clone()),
-                vcard: Some(c.vcard.clone()),
-                ..Default::default()
-            };
+                vcard: Some(c.vcard.clone()) });
             if let [only] = cards.as_slice() {
                 let mut c = one(only);
                 c.context_info = field(&ctx);
                 msg.contact_message = MessageField::some(c);
             } else {
-                msg.contacts_array_message = MessageField::some(wa::message::ContactsArrayMessage {
+                msg.contacts_array_message = MessageField::some(pb!(wa::message::ContactsArrayMessage {
                     display_name: Some(format!("{} contacts", cards.len())),
                     contacts: cards.iter().map(one).collect(),
-                    context_info: field(&ctx),
-                    ..Default::default()
-                });
+                    context_info: field(&ctx) }));
             }
         }
         other => anyhow::bail!("{} messages are sent through their own request", other.kind()),
@@ -601,7 +681,7 @@ pub fn status_of(s: Option<wa::web_message_info::Status>) -> Status {
         Some(S::DELIVERY_ACK) => Status::Delivered,
         Some(S::READ) => Status::Read,
         Some(S::PLAYED) => Status::Played,
-        None => Status::Delivered,
+        _ => Status::Delivered,
     }
 }
 
@@ -614,18 +694,14 @@ mod tests {
         let mut ctx = wa::ContextInfo::default();
         ctx.stanza_id = Some("ABC".into());
         ctx.participant = Some("15550001111:3@s.whatsapp.net".into());
-        ctx.quoted_message = MessageField::some(wa::Message { conversation: Some("original".into()), ..Default::default() });
+        ctx.quoted_message = MessageField::some(pb!(wa::Message { conversation: Some("original".into()) }));
         ctx.mentioned_jid = vec!["15550002222@s.whatsapp.net".into()];
         ctx.is_forwarded = Some(true);
         ctx.forwarding_score = Some(6);
-        let msg = wa::Message {
-            extended_text_message: MessageField::some(wa::message::ExtendedTextMessage {
+        let msg = pb!(wa::Message {
+            extended_text_message: MessageField::some(pb!(wa::message::ExtendedTextMessage {
                 text: Some("hello @15550002222".into()),
-                context_info: MessageField::some(ctx),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+                context_info: MessageField::some(ctx) })) });
         let p = parse(&msg);
         assert_eq!(p.content.as_ref().unwrap().text(), "hello @15550002222");
         let q = p.quote.unwrap();
@@ -637,54 +713,38 @@ mod tests {
 
     #[test]
     fn recognises_specials() {
-        let key = wa::MessageKey { id: Some("TARGET".into()), ..Default::default() };
-        let reaction = wa::Message {
-            reaction_message: MessageField::some(wa::message::ReactionMessage {
+        let key = pb!(wa::MessageKey { id: Some("TARGET".into()) });
+        let reaction = pb!(wa::Message {
+            reaction_message: MessageField::some(pb!(wa::message::ReactionMessage {
                 key: MessageField::some(key.clone()),
-                text: Some("🔥".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+                text: Some("🔥".into()) })) });
         assert!(matches!(parse(&reaction).special, Special::Reaction { ref target, ref emoji } if target == "TARGET" && emoji == "🔥"));
 
-        let revoke = wa::Message {
-            protocol_message: MessageField::some(wa::message::ProtocolMessage {
+        let revoke = pb!(wa::Message {
+            protocol_message: MessageField::some(pb!(wa::message::ProtocolMessage {
                 key: MessageField::some(key.clone()),
-                r#type: Some(wa::message::protocol_message::Type::REVOKE),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+                r#type: Some(wa::message::protocol_message::Type::REVOKE) })) });
         assert!(matches!(parse(&revoke).special, Special::Revoke { ref target } if target == "TARGET"));
 
-        let edit = wa::Message {
-            protocol_message: MessageField::some(wa::message::ProtocolMessage {
+        let edit = pb!(wa::Message {
+            protocol_message: MessageField::some(pb!(wa::message::ProtocolMessage {
                 key: MessageField::some(key),
                 r#type: Some(wa::message::protocol_message::Type::MESSAGE_EDIT),
-                edited_message: MessageField::some(wa::Message { conversation: Some("fixed".into()), ..Default::default() }),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+                edited_message: MessageField::some(pb!(wa::Message { conversation: Some("fixed".into()) })) })) });
         assert!(matches!(parse(&edit).special, Special::Edit { ref text, .. } if text == "fixed"));
         assert!(matches!(parse(&wa::Message::default()).special, Special::Skip));
     }
 
     #[test]
     fn media_round_trips_through_storage() {
-        let msg = wa::Message {
-            image_message: MessageField::some(wa::message::ImageMessage {
+        let msg = pb!(wa::Message {
+            image_message: MessageField::some(pb!(wa::message::ImageMessage {
                 mimetype: Some("image/jpeg".into()),
                 caption: Some("view".into()),
                 width: Some(640),
                 height: Some(480),
                 file_length: Some(1234),
-                direct_path: Some("/v/t62/abc".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+                direct_path: Some("/v/t62/abc".into()) })) });
         let p = parse(&msg);
         let c = p.content.unwrap();
         assert_eq!(c.kind(), "image");
@@ -729,6 +789,39 @@ mod tests {
         assert_eq!(parse(&built).quote.unwrap().text, "earlier");
         m.content = Content::Image { media: Media::default(), caption: String::new(), width: 1, height: 1, thumb: None };
         assert!(build(&m, None, None, 0).is_err(), "media needs an upload first");
+    }
+
+    #[test]
+    fn sticker_identity() {
+        let msg = pb!(wa::Message {
+            sticker_message: MessageField::some(pb!(wa::message::StickerMessage {
+                file_sha256: Some(vec![1; 32]),
+                file_enc_sha256: Some(vec![2; 32]),
+                media_key: Some(vec![3; 32]),
+                direct_path: Some("/v/t62.15575-24/x".into()),
+                file_length: Some(9000),
+                is_animated: Some(true)
+            }))
+        });
+        let s = sticker_of_message(&msg).unwrap();
+        assert_eq!(s.id, b64(&[1; 32]));
+        assert!(s.animated);
+        let r = s.remote.unwrap();
+        assert_eq!((r.direct_path.as_str(), r.file_length, r.mimetype.as_str()), ("/v/t62.15575-24/x", 9000, "image/webp"));
+        // Round trip into the favourite action the phone expects.
+        let lib = Sticker { id: s.id, width: 512, height: 512, used: 5, ..Default::default() };
+        let v = favorite_action(&lib, &r, true, 77);
+        let act = v.sticker_action.as_option().unwrap();
+        assert_eq!(act.is_favorite, Some(true));
+        assert_eq!(act.media_key.as_deref(), Some(&[3u8; 32][..]));
+        assert_eq!(sticker_of_action(act).unwrap(), r);
+        assert_eq!(unrecent_action(&lib, 77).remove_recent_sticker_action.as_option().unwrap().last_sticker_sent_ts, Some(5));
+        assert_eq!(ms(1_700_000_000), 1_700_000_000_000);
+        assert_eq!(ms(1_700_000_000_000), 1_700_000_000_000);
+        // Lottie stickers are left out.
+        let mut lottie = msg.clone();
+        lottie.sticker_message.as_option_mut().unwrap().is_lottie = Some(true);
+        assert!(sticker_of_message(&lottie).is_none());
     }
 
     #[test]

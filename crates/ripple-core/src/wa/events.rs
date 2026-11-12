@@ -11,7 +11,7 @@ use whatsapp_rust::types::message::MessageInfo;
 use whatsapp_rust::wacore::stanza::groups::{GroupNotificationAction as GA, GroupParticipantInfo};
 use whatsapp_rust::wacore::types::call::CallAction;
 use whatsapp_rust::wacore::types::events::BatchOrigin;
-use whatsapp_rust::wacore::types::presence::{ChatPresence, ChatPresenceMedia, ReceiptType};
+use whatsapp_rust::wacore::types::presence::{ChatActivity, PresenceStatus, ReceiptType};
 use whatsapp_rust::waproto::whatsapp as wa;
 
 use super::convert::{self, Special, Stored, jid_str, parse_jid};
@@ -45,6 +45,9 @@ fn blank(id: String, chat: String, sender: String, from_me: bool, ts: i64, conte
         album: None,
     }
 }
+
+/// Set once favourites and recents have been brought over for this account.
+const STICKERS_SYNCED: &str = "stickers_synced";
 
 /// A decrypted message with its addresses already mapped to Ripple's ids.
 pub(crate) struct Incoming {
@@ -88,6 +91,8 @@ impl Inner {
             }
             Event::PairSuccess(_) => {
                 let _ = app.store.set_meta("paired", &true);
+                // A fresh link receives favourites and recents through its initial sync.
+                let _ = app.store.set_meta(STICKERS_SYNCED, &true);
                 self.first_sync.store(true, Ordering::Relaxed);
                 super::mark_history(self);
                 app.set_session(Session::Syncing { progress: 2 });
@@ -180,26 +185,19 @@ impl Inner {
                 let alt = if src.is_group { None } else { src.sender_alt.as_ref() };
                 let chat = self.resolve(&client, &src.chat, alt).await;
                 let user = self.resolve(&client, &src.sender, src.sender_alt.as_ref()).await;
-                let state = match (&p.state, &p.media) {
-                    (ChatPresence::Composing, ChatPresenceMedia::Audio) => "recording",
-                    (ChatPresence::Composing, _) => "typing",
+                let state = match p.state {
+                    ChatActivity::RecordingAudio => "recording",
+                    ChatActivity::Typing => "typing",
                     _ => "idle",
                 };
                 app.ingest_typing(&chat, &user, state);
             }
             Event::Presence(p) => {
                 let jid = self.resolve(&client, &p.from, None).await;
-                app.ingest_presence(&jid, !p.unavailable, p.last_seen.map(|t| t.timestamp_millis()).unwrap_or(0));
+                app.ingest_presence(&jid, p.status == PresenceStatus::Available, p.last_seen.map(|t| t.timestamp_millis()).unwrap_or(0));
             }
 
             // ── people ──
-            Event::PushNameUpdate(p) => {
-                let jid = self.resolve(&client, &p.jid, p.message.source.sender_alt.as_ref()).await;
-                let name = p.new_push_name.clone();
-                if !name.is_empty() {
-                    app.ingest_contact(&jid, |c| c.push_name = Some(name));
-                }
-            }
             Event::ContactUpdate(c) => {
                 let a = &c.action;
                 if let (Some(lid), Some(pn)) = (&a.lid_jid, &a.pn_jid) {
@@ -279,6 +277,26 @@ impl Inner {
             Event::StarUpdate(u) => {
                 let chat = self.resolve(&client, &u.chat_jid, None).await;
                 app.ingest_star(&chat, &u.message_id, u.action.starred.unwrap_or(false));
+            }
+            Event::FavoriteStickerUpdate(u) => {
+                let a = &u.action;
+                let on = a.is_favorite.unwrap_or(false);
+                if a.is_lottie.unwrap_or(false) || (!on && app.store.sticker(&u.filehash).is_none()) {
+                    return;
+                }
+                let remote = convert::sticker_of_action(a);
+                let (w, h) = (a.width.unwrap_or(512), a.height.unwrap_or(512));
+                app.ingest_sticker(&u.filehash, |s| {
+                    s.favorite = on;
+                    s.width = w;
+                    s.height = h;
+                    if remote.is_some() {
+                        s.remote = remote;
+                    }
+                });
+            }
+            Event::RemoveRecentStickerUpdate(u) => {
+                app.sticker_unrecent(&u.filehash, u.action.last_sticker_sent_ts.map(convert::ms));
             }
             Event::DeleteMessageForMeUpdate(u) => {
                 let chat = self.resolve(&client, &u.chat_jid, None).await;
@@ -411,19 +429,74 @@ impl Inner {
                 Err(e) => log::warn!("resend of {id} failed: {e:#}"),
             }
         }
+        self.clone().catch_up_stickers(app.clone(), client.clone());
         self.clone().fill_avatars(app, client);
+    }
+
+    /// For an account linked before sticker sync existed: rebuild recents from
+    /// the stickers the user has sent, and replay the app-state collection that
+    /// holds favourites. Runs once.
+    fn catch_up_stickers(self: Arc<Self>, app: Arc<App>, client: Arc<Client>) {
+        if app.store.meta::<bool>(STICKERS_SYNCED).unwrap_or(false) || super::first_sync(&self) {
+            return;
+        }
+        tokio::spawn(async move {
+            let mut seen = 0;
+            for (chat, id, ts) in app.store.sent_stickers(400) {
+                let Some(raw) = app.store.media_params::<Stored>(&chat, &id).and_then(|s| s.message()) else { continue };
+                let Some(st) = convert::sticker_of_message(&raw) else { continue };
+                let _ = app.store.update_sticker(&st.id, |s| {
+                    s.used = s.used.max(ts);
+                    s.animated |= st.animated;
+                    if s.remote.is_none() {
+                        s.remote = st.remote;
+                    }
+                });
+                seen += 1;
+            }
+            if seen > 0 {
+                app.emit(crate::api::UiEvent::Stickers);
+            }
+            use whatsapp_rust::{AppStateResyncMode, WAPatchName};
+            match client.resync_app_state([WAPatchName::RegularLow], AppStateResyncMode::Snapshot).await {
+                Ok(report) if report.all_synced() => {
+                    let _ = app.store.set_meta(STICKERS_SYNCED, &true);
+                }
+                Ok(report) => log::warn!("sticker favourites not synced yet: {:?}", report.unsynced().collect::<Vec<_>>()),
+                Err(e) => log::warn!("sticker favourites resync failed: {e}"),
+            }
+        });
     }
 
     pub(crate) async fn refresh_groups(&self, app: &Arc<App>, client: &Arc<Client>) {
         let me = app.me();
-        let Ok(groups) = client.groups().get_participating().await else { return };
+        let Ok(list) = client.groups().list_participating().await else { return };
         let mut communities = vec![];
-        for md in groups.values() {
-            let g = group_from(self, &me, md);
-            if g.is_community {
-                communities.push(md.id.clone());
+        for ov in &list {
+            if matches!(ov.hierarchy, whatsapp_rust::GroupHierarchy::Community) {
+                communities.push(ov.id.clone());
             }
-            merge_group(app, g);
+            // Group notifications keep known groups current; fetch the full
+            // member list only for groups we have not seen yet.
+            let id = jid_str(&ov.id);
+            let known = app.store.group(&id).is_some_and(|g| !g.participants.is_empty() || g.is_community);
+            if !known {
+                if let Ok(md) = client.groups().fetch_metadata(&ov.id).await {
+                    merge_group(app, group_from(self, &me, &md));
+                }
+                continue;
+            }
+            let subject = ov.subject.clone().unwrap_or_default();
+            let size = ov.participant_count;
+            app.group_mut(&id, |g| {
+                if !subject.is_empty() {
+                    g.subject = subject;
+                }
+                if let Some(n) = size {
+                    g.size = n;
+                }
+                g.joined = true;
+            });
         }
         for parent in communities {
             let pid = jid_str(&parent);
@@ -475,15 +548,15 @@ impl Inner {
             app,
             msg,
             Incoming {
-                id: info.id.clone(),
+                id: info.id.to_string(),
                 chat,
                 sender,
                 sender_raw: jid_str(&src.sender),
                 sender_alt: src.sender_alt.as_ref().map(jid_str),
                 from_me: src.is_from_me,
                 ts: info.timestamp.timestamp_millis(),
-                push_name: info.push_name.clone(),
-                timer: info.ephemeral_expiration,
+                push_name: info.push_name.to_string(),
+                timer: None,
                 live,
             },
         );
@@ -522,6 +595,11 @@ impl Inner {
             Special::None => {}
         }
         let Some(content) = parsed.content else { return };
+        if i.from_me
+            && let Some(st) = convert::sticker_of_message(msg)
+        {
+            app.sticker_sent(&st.id, ts, st.remote, st.animated);
+        }
         let mut m = blank(i.id.clone(), chat.to_string(), sender.to_string(), i.from_me, ts, content);
         m.quote = parsed.quote.map(|mut q| {
             q.sender = self.canon_s(&q.sender);
@@ -669,6 +747,23 @@ impl Inner {
             states.push((chat, conv));
         }
         app.ingest_history(batch);
+        let mut stickers = 0;
+        for x in &hs.recent_stickers {
+            let Some(st) = convert::sticker_of_metadata(x) else { continue };
+            let used = x.last_sticker_sent_ts.map(convert::ms).filter(|t| *t > 0).unwrap_or_else(now_ms);
+            let size = (x.width.unwrap_or(512), x.height.unwrap_or(512));
+            let _ = app.store.update_sticker(&st.id, |s| {
+                s.used = s.used.max(used);
+                (s.width, s.height) = size;
+                if s.remote.is_none() {
+                    s.remote = st.remote;
+                }
+            });
+            stickers += 1;
+        }
+        if stickers > 0 {
+            app.emit(crate::api::UiEvent::Stickers);
+        }
         for (chat, conv) in states {
             if app.chat(&chat).is_none() {
                 if conv.messages.is_empty() && !is_group(&chat) {
@@ -760,6 +855,17 @@ impl Inner {
                 }
             }
         }
+        if from_me
+            && let Some(st) = convert::sticker_of_message(msg)
+        {
+            let _ = app.store.update_sticker(&st.id, |s| {
+                s.used = s.used.max(ts);
+                s.animated |= st.animated;
+                if s.remote.is_none() {
+                    s.remote = st.remote;
+                }
+            });
+        }
         if convert::needs_raw(&m.content) {
             let secret = w.message_secret.clone().or(parsed.secret);
             let mut stored = Stored::of(msg, secret.as_deref());
@@ -775,7 +881,7 @@ impl Inner {
         let id = jid_str(&u.group_jid);
         let me = app.me();
         if app.store.group(&id).is_none()
-            && let Ok(md) = client.groups().get_metadata(&u.group_jid).await {
+            && let Ok(md) = client.groups().fetch_metadata(&u.group_jid).await {
                 merge_group(app, group_from(self, &me, &md));
             }
         let actor = match &u.participant {
@@ -786,7 +892,7 @@ impl Inner {
             list.iter().map(|p| self.canon(&p.jid, p.phone_number.as_ref().or(p.lid.as_ref()))).collect()
         };
         let sys = |event: &str, targets: &[String], text: &str| app.system_message(&id, event, actor.as_deref(), targets, text);
-        match &u.action {
+        match &*u.action {
             GA::Add { participants, .. } => {
                 let jids = who(participants);
                 app.group_mut(&id, |g| {
@@ -819,8 +925,8 @@ impl Inner {
                     sys("remove", &jids, "");
                 }
             }
-            GA::Promote { participants } | GA::Demote { participants } => {
-                let up = matches!(u.action, GA::Promote { .. });
+            GA::Promote { participants, .. } | GA::Demote { participants, .. } => {
+                let up = matches!(*u.action, GA::Promote { .. });
                 let jids = who(participants);
                 app.group_mut(&id, |g| {
                     for p in g.participants.iter_mut().filter(|p| jids.contains(&p.id) && p.role != Role::Owner) {
@@ -840,17 +946,17 @@ impl Inner {
                 sys("description", &[], "");
             }
             GA::Locked { .. } | GA::Unlocked => {
-                let on = matches!(u.action, GA::Locked { .. });
+                let on = matches!(*u.action, GA::Locked { .. });
                 app.group_mut(&id, |g| g.locked = on);
                 sys("locked", &[], if on { "on" } else { "off" });
             }
             GA::Announce | GA::NotAnnounce => {
-                let on = matches!(u.action, GA::Announce);
+                let on = matches!(*u.action, GA::Announce);
                 app.group_mut(&id, |g| g.announce = on);
                 sys("announce", &[], if on { "on" } else { "off" });
             }
             GA::Ephemeral { expiration, .. } => app.ingest_ephemeral(&id, *expiration, actor.as_deref().unwrap_or_default()),
-            GA::MembershipApprovalMode { enabled } => {
+            GA::MembershipApprovalMode { enabled, .. } => {
                 let on = *enabled;
                 app.group_mut(&id, |g| g.approval = on);
                 sys("approval", &[], if on { "on" } else { "off" });
@@ -865,16 +971,16 @@ impl Inner {
                     }
                 });
             }
-            GA::RevokedMembershipRequests { participants } => {
+            GA::RevokedMembershipRequests { participants, .. } => {
                 let jids: Vec<String> = participants.iter().map(|p| self.canon(p, None)).collect();
                 app.group_mut(&id, |g| g.pending.retain(|j| !jids.contains(j)));
             }
-            GA::MemberAddMode { mode } => {
+            GA::MemberAddMode { mode, .. } => {
                 let on = mode == "all_member_add";
                 app.group_mut(&id, |g| g.members_can_add = on);
                 sys("membersCanAdd", &[], if on { "on" } else { "off" });
             }
-            GA::Invite { code } => {
+            GA::Invite { code, .. } => {
                 let c = code.clone();
                 app.group_mut(&id, |g| g.invite_code = Some(c));
             }
@@ -882,7 +988,7 @@ impl Inner {
                 app.group_mut(&id, |g| g.invite_code = None);
             }
             GA::Create { .. } => {
-                if let Ok(md) = client.groups().get_metadata(&u.group_jid).await {
+                if let Ok(md) = client.groups().fetch_metadata(&u.group_jid).await {
                     let g = group_from(self, &me, &md);
                     let subject = g.subject.clone();
                     merge_group(app, g);
@@ -944,8 +1050,17 @@ impl Inner {
     /// Downloads a profile picture (`small` = thumbnail) and attaches it.
     pub(crate) async fn fetch_avatar(&self, app: &Arc<App>, client: &Arc<Client>, id: &str, small: bool) {
         let Ok(jid) = parse_jid(id) else { return };
-        let pic = match client.contacts().get_profile_picture(&jid, small).await {
-            Ok(Some(p)) if !p.url.is_empty() => p,
+        use whatsapp_rust::{ProfilePictureLookup, ProfilePictureRequest, ProfilePictureTarget, ProfilePictureType};
+        let target = if !is_group(id) {
+            ProfilePictureTarget::Contact(&jid)
+        } else if app.store.group(id).is_some_and(|g| g.is_community) {
+            ProfilePictureTarget::Community(&jid)
+        } else {
+            ProfilePictureTarget::Group(&jid)
+        };
+        let kind = if small { ProfilePictureType::Preview } else { ProfilePictureType::Full };
+        let pic = match client.pictures().lookup(ProfilePictureRequest::new(target, kind)).await {
+            Ok(ProfilePictureLookup::Found(p)) if !p.url.is_empty() => p,
             _ => return,
         };
         let bytes = tokio::task::spawn_blocking(move || -> Option<Vec<u8>> {
@@ -972,7 +1087,7 @@ impl Inner {
             let mut chats = app.all_chats();
             chats.sort_by_key(|c| -c.ts);
             for c in chats.into_iter().filter(|c| c.avatar.is_none()).take(120) {
-                if !client.is_connected() {
+                if !client.is_logged_in() {
                     break;
                 }
                 self.fetch_avatar(&app, &client, &c.id, true).await;

@@ -2,7 +2,7 @@
 
 import { For, Show, createMemo, createResource, createSignal, onMount } from "solid-js";
 import { call, mediaUrl } from "../lib/ipc";
-import { act, send, toast } from "../lib/state";
+import { act, send, stickerRev, toast } from "../lib/state";
 import type { Attachment, Sticker } from "../lib/types";
 import { Icon, type IconName, openMenu } from "./ui";
 
@@ -43,13 +43,13 @@ const loadEmoji = () =>
 
 const GROUPS: { id: number; label: string; icon: IconName }[] = [
   { id: 0, label: "Smileys & emotion", icon: "smiley" },
-  { id: 1, label: "People", icon: "hand-waving" },
-  { id: 3, label: "Animals & nature", icon: "sparkle" },
-  { id: 4, label: "Food & drink", icon: "heart" },
-  { id: 5, label: "Travel & places", icon: "globe" },
-  { id: 6, label: "Activities", icon: "lightning" },
-  { id: 7, label: "Objects", icon: "bell" },
-  { id: 8, label: "Symbols", icon: "hash" },
+  { id: 1, label: "People", icon: "emoji-people" },
+  { id: 3, label: "Animals & nature", icon: "emoji-nature" },
+  { id: 4, label: "Food & drink", icon: "emoji-food" },
+  { id: 5, label: "Travel & places", icon: "emoji-travel" },
+  { id: 6, label: "Activities", icon: "emoji-activity" },
+  { id: 7, label: "Objects", icon: "emoji-objects" },
+  { id: 8, label: "Symbols", icon: "emoji-symbols" },
   { id: 9, label: "Flags", icon: "flag" },
 ];
 
@@ -185,10 +185,16 @@ export function pickFiles(accept: string, multiple = true): Promise<File[]> {
   });
 }
 
+const RECENT_STICKERS = 48;
+
 export function StickerPicker(props: { onDone: () => void }) {
-  const [list, { mutate, refetch }] = createResource(() => call<Sticker[]>("stickers").catch(() => []));
+  const [list, { mutate, refetch }] = createResource(stickerRev, () => call<Sticker[]>("stickers").catch(() => []));
   const [tab, setTab] = createSignal<"recent" | "fav">("recent");
-  const shown = () => (list() ?? []).filter((s) => tab() === "recent" || s.favorite);
+  // The library comes back most recently used first (`used` is a timestamp).
+  const shown = () => {
+    const all = list() ?? [];
+    return tab() === "fav" ? all.filter((s) => s.favorite) : all.filter((s) => s.used > 0).slice(0, RECENT_STICKERS);
+  };
   const create = async () => {
     const [file] = await pickFiles("image/png,image/jpeg,image/webp", false);
     if (!file) return;
@@ -198,10 +204,14 @@ export function StickerPicker(props: { onDone: () => void }) {
       toast("Sticker added", "success");
     }
   };
+  const update = async (op: string, args: Record<string, unknown>) => {
+    const next = await act<Sticker[]>(op, args);
+    if (next) mutate(next);
+  };
   const menu = (e: MouseEvent, s: Sticker) =>
     openMenu(e, [
-      { label: s.favorite ? "Remove from favourites" : "Add to favourites", icon: "heart", run: async () => mutate((await act<Sticker[]>("stickerFavorite", { token: s.token, on: !s.favorite })) ?? list()) },
-      { label: "Remove sticker", icon: "trash", danger: true, run: async () => mutate((await act<Sticker[]>("stickerRemove", { token: s.token })) ?? list()) },
+      { label: s.favorite ? "Remove from favourites" : "Add to favourites", icon: s.favorite ? "heart-fill" : "heart", run: () => update("stickerFavorite", { id: s.id, on: !s.favorite }) },
+      { label: "Remove from recents", icon: "x", hidden: tab() !== "recent", run: () => update("stickerForget", { id: s.id }) },
     ]);
   return (
     <div class="emoji-picker">
@@ -216,18 +226,22 @@ export function StickerPicker(props: { onDone: () => void }) {
           <div class="empty">
             <Icon name="sticker" />
             <strong>{tab() === "fav" ? "No favourite stickers" : "No stickers yet"}</strong>
-            {tab() === "fav" ? "Right-click a sticker to add it here." : "Create one from any image, or save stickers people send you."}
+            {tab() === "fav" ? "Right-click a sticker to add it here. Favourites sync with WhatsApp on your phone." : "Stickers you send show up here, along with the ones you've used on your phone."}
           </div>
         }>
           <div class="sticker-grid">
             <For each={shown()}>
               {(s) => (
-                <button
-                  onContextMenu={(e) => menu(e, s)}
-                  onClick={() => { void send({ type: "sticker", token: s.token }).then(() => void refetch()); props.onDone(); }}
-                >
-                  <img src={mediaUrl(s.token)} alt="Sticker" loading="lazy" draggable={false} />
-                </button>
+                <Show when={s.token} fallback={<span class="st-skel" title="Downloading…" onContextMenu={(e) => menu(e, s)} />}>
+                  {(token) => (
+                    <button
+                      onContextMenu={(e) => menu(e, s)}
+                      onClick={() => { void send({ type: "sticker", id: s.id }).then(() => void refetch()); props.onDone(); }}
+                    >
+                      <img src={mediaUrl(token())} alt="Sticker" loading="lazy" draggable={false} />
+                    </button>
+                  )}
+                </Show>
               )}
             </For>
           </div>

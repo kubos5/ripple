@@ -7,7 +7,7 @@ import { act, contactName, openModal, setState, state } from "../lib/state";
 import type { ContentOf, Message } from "../lib/types";
 import { RichText, saveMedia } from "./Bubble";
 import { bumpStars } from "./Sidebar";
-import { IconButton } from "./ui";
+import { Icon, IconButton } from "./ui";
 
 const isViewable = (m: Message) => (m.content.type === "image" || m.content.type === "video") && m.content.media.state === "ready";
 
@@ -89,8 +89,8 @@ export function Lightbox() {
             <IconButton class="no-drag" icon="x" tip="Close" onClick={close} />
           </div>
           <div class="lb-stage" onMouseDown={(e) => e.target === e.currentTarget && close()} onWheel={onWheel}>
-            <Show when={index() > 0}><button class="lb-nav prev" aria-label="Previous" onClick={() => step(-1)}><svg class="icon" viewBox="0 0 256 256"><path d="M165.7 202.3a8 8 0 0 1-11.4 11.4l-80-80a8 8 0 0 1 0-11.4l80-80a8 8 0 0 1 11.4 11.4L91.3 128Z" /></svg></button></Show>
-            <Show when={index() < items().length - 1}><button class="lb-nav next" aria-label="Next" onClick={() => step(1)}><svg class="icon" viewBox="0 0 256 256"><path d="m181.7 133.7-80 80a8 8 0 0 1-11.4-11.4L164.7 128 90.3 53.7a8 8 0 0 1 11.4-11.4l80 80a8 8 0 0 1 0 11.4Z" /></svg></button></Show>
+            <Show when={index() > 0}><button class="lb-nav prev" aria-label="Previous" onClick={() => step(-1)}><Icon name="caret-left" /></button></Show>
+            <Show when={index() < items().length - 1}><button class="lb-nav next" aria-label="Next" onClick={() => step(1)}><Icon name="caret-right" /></button></Show>
             <Show when={media()} keyed>
               {(c) => (
                 <Show when={c.type === "image"} fallback={<video src={mediaUrl(c.media.token)} controls autoplay loop={c.type === "video" && c.gif} />}>

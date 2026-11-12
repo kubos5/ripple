@@ -1,10 +1,13 @@
 /* Ripple design tokens. Everything visual derives from these. */
 
 :root {
-  --font-ui: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
-  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", var(--font-ui);
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* The operating system's own interface font by default; Settings › Appearance offers a few others. */
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Ubuntu, Cantarell,
+    "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-ui: var(--font-system), var(--font-emoji);
+  --font-display: var(--font-ui);
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
 
   --scale: 1;
   --fs-11: calc(11px * var(--scale));
@@ -16,12 +19,16 @@
   --fs-20: calc(20px * var(--scale));
   --fs-28: calc(28px * var(--scale));
 
-  --r-xs: 6px;
-  --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 18px;
-  --r-xl: 24px;
-  --r-full: 999px;
+  /* Corners: softened, never pill-shaped. */
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+  /* Controls that used to be pills. */
+  --r-full: 7px;
+  /* Controls that used to be circles (round icon buttons, avatars). */
+  --r-round: 28%;
 
   /* Motion: short, ease-out for entrances, faster exits, springs for things the user drives. */
   --t-fast: 120ms;
@@ -59,14 +66,14 @@
   --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 12px 36px -6px rgba(0, 0, 0, 0.6), 0 3px 10px rgba(0, 0, 0, 0.35);
   --shadow-float: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 6px 20px -4px rgba(0, 0, 0, 0.5);
 
-  --accent: #3ee0b5;
-  --accent-strong: #62e9c5;
-  --accent-ink: #04261d;
+  --accent: #f2f2f3;
+  --accent-strong: #ffffff;
+  --accent-ink: #111213;
   --danger: #ff6b5e;
   --warn: #ffb84d;
 
   --bubble-in: #1e1f22;
-  --bubble-out-mix: 21%;
+  --bubble-out-mix: 14%;
 
   --tone-0: #ff8a7a;
   --tone-1: #ffb454;
@@ -98,14 +105,14 @@
   --shadow-pop: 0 0 0 1px rgba(20, 22, 26, 0.08), 0 14px 40px -8px rgba(20, 22, 26, 0.22), 0 3px 10px rgba(20, 22, 26, 0.07);
   --shadow-float: 0 0 0 1px rgba(20, 22, 26, 0.07), 0 6px 20px -6px rgba(20, 22, 26, 0.16);
 
-  --accent: #0a8f72;
-  --accent-strong: #077a61;
+  --accent: #111213;
+  --accent-strong: #000000;
   --accent-ink: #ffffff;
   --danger: #d43d2f;
   --warn: #b56a00;
 
-  --bubble-in: #f3f3f1;
-  --bubble-out-mix: 15%;
+  --bubble-in: #f3f3f2;
+  --bubble-out-mix: 9%;
 
   --tone-0: #c8402e;
   --tone-1: #a86400;
@@ -118,17 +125,21 @@
   --tone-mix: 13%;
 }
 
-/* ───────────── accent presets ───────────── */
+/* ───────────── accent presets ─────────────
+   "mono" (the default) is white on dark and black on light, set above.
+   Coloured accents tint outgoing bubbles a little more. */
+:root[data-accent]:not([data-accent="mono"]) { --bubble-out-mix: 20%; }
+:root[data-theme="light"][data-accent]:not([data-accent="mono"]) { --bubble-out-mix: 14%; }
+:root[data-accent="tidal"] { --accent: #3ee0b5; --accent-strong: #62e9c5; --accent-ink: #04261d; }
 :root[data-accent="coral"] { --accent: #ff8363; --accent-strong: #ff9b80; --accent-ink: #3a0f05; }
 :root[data-accent="amber"] { --accent: #ffb938; --accent-strong: #ffc85e; --accent-ink: #3a2400; }
 :root[data-accent="sky"] { --accent: #5cc4ff; --accent-strong: #84d3ff; --accent-ink: #032a42; }
 :root[data-accent="rose"] { --accent: #ff7eb6; --accent-strong: #ff9cc7; --accent-ink: #3d0a22; }
-:root[data-accent="graphite"] { --accent: #e4e5e7; --accent-strong: #ffffff; --accent-ink: #17181a; }
+:root[data-theme="light"][data-accent="tidal"] { --accent: #0a8f72; --accent-strong: #077a61; --accent-ink: #ffffff; }
 :root[data-theme="light"][data-accent="coral"] { --accent: #d9482b; --accent-strong: #bf3b20; --accent-ink: #ffffff; }
 :root[data-theme="light"][data-accent="amber"] { --accent: #b86e00; --accent-strong: #9c5d00; --accent-ink: #ffffff; }
 :root[data-theme="light"][data-accent="sky"] { --accent: #0b76c2; --accent-strong: #0865a8; --accent-ink: #ffffff; }
 :root[data-theme="light"][data-accent="rose"] { --accent: #cf2f76; --accent-strong: #b52364; --accent-ink: #ffffff; }
-:root[data-theme="light"][data-accent="graphite"] { --accent: #2a2b2e; --accent-strong: #17181a; --accent-ink: #ffffff; }
 
 :root {
   --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
@@ -138,7 +149,18 @@
   --danger-soft: color-mix(in oklab, var(--danger) 13%, transparent);
 }
 
+/* ───────────── typefaces ───────────── */
+:root[data-font="hanken"] { --font-ui: "Hanken Grotesk Variable", var(--font-system), var(--font-emoji); }
+:root[data-font="plex"] { --font-ui: "IBM Plex Sans Variable", var(--font-system), var(--font-emoji); }
+:root[data-font="atkinson"] { --font-ui: "Atkinson Hyperlegible Next Variable", var(--font-system), var(--font-emoji); }
+:root[data-font="serif"] { --font-ui: ui-serif, "New York", "Iowan Old Style", Charter, Cambria, Georgia, serif, var(--font-emoji); }
+
 :root[data-density="compact"] {
   --row-h: 60px;
   --header-h: 54px;
+}
+/* macOS draws its window buttons over the rail, centred on the header row (see trafficLightPosition). */
+:root[data-shell="tauri"][data-platform="macos"] {
+  --rail-w: 78px;
+  --header-h: 60px;
 }

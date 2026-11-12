@@ -70,7 +70,6 @@ function Header(props: { chat: Chat }) {
         </div>
       </button>
       <IconButton class="no-drag" icon="magnifying-glass" tip="Search in chat" on={state.panel === "search"} onClick={() => setState("panel", state.panel === "search" ? null : "search")} />
-      <IconButton class="no-drag" icon="sidebar-simple" tip="Details" on={state.panel === "info"} onClick={() => setState("panel", state.panel === "info" ? null : "info")} style={{ transform: "scaleX(-1)" }} />
       <IconButton class="no-drag" icon="dots-three-vertical" tip="More" onClick={more} />
     </header>
   );

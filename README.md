@@ -25,8 +25,8 @@ everyone or for yourself, forwarding, stars, pinned messages, message info,
 multi-select, disappearing messages, read receipts and typing indicators.
 
 **Media.** Photos, videos, albums, GIFs, documents, audio, voice notes (record,
-waveform, 1×/1.5×/2× playback), stickers (recents, favourites, create from any
-image), view-once media, a lightbox with zoom, and a per-chat media gallery.
+waveform, 1×/1.5×/2× playback), stickers (recents and favourites synced with
+WhatsApp on your phone, create from any image), view-once media, a lightbox with zoom, and a per-chat media gallery.
 
 **More message types.** Polls, events with RSVP, locations, contact cards.
 
@@ -34,8 +34,9 @@ image), view-once media, a lightbox with zoom, and a per-chat media gallery.
 settings, invite links with QR codes, join requests; community home with the
 announcements channel and subgroups, creating communities, linking groups.
 
-**Desktop.** Native notifications, tray icon, unread badge, launch at login,
-light and dark themes, accent colours, adjustable text size, reduced motion.
+**Desktop.** Native notifications, unread badge, tray icon (Windows and Linux),
+launch at login, light and dark themes, accent colours, a choice of fonts,
+adjustable text size, reduced motion.
 
 **Not included yet:** Status, Channels, and answering voice or video calls
 (incoming calls show a banner you can decline).
@@ -129,7 +130,8 @@ Chat and message lists are virtualised, so only what is on screen is rendered
 
 - Windows and Linux builds are produced by CI but have not been run by hand yet.
 - Live WhatsApp behaviour depends on `whatsapp-rust`, which is pre-1.0; expect
-  occasional breakage when WhatsApp changes its protocol.
+  occasional breakage when WhatsApp changes its protocol. Ripple pins an
+  unreleased upstream commit, because sticker sync is not in a release yet.
 - Votes on polls that arrive through history sync (sent before you linked) are
   not shown; votes cast afterwards are.
 - GIF files are sent as documents (WhatsApp GIFs are short MP4 videos, and
@@ -150,6 +152,7 @@ Settings).
 ## Credits
 
 Protocol: [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust) (MIT).
-Icons: [Phosphor](https://phosphoricons.com) (MIT). Emoji data:
-[emojibase](https://emojibase.dev) (MIT). Typefaces: Hanken Grotesk, Bricolage
-Grotesque and JetBrains Mono (SIL Open Font License).
+Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Emoji
+data: [emojibase](https://emojibase.dev) (MIT). Ripple uses your system font by
+default; the optional Hanken Grotesk, IBM Plex Sans and Atkinson Hyperlegible
+Next typefaces are bundled under the SIL Open Font License.

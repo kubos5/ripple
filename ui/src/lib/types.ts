@@ -181,6 +181,8 @@ export type Session =
 export interface Settings {
   theme: "system" | "light" | "dark";
   accent: string;
+  font: string;
+  design: number;
   textScale: number;
   compact: boolean;
   enterSends: boolean;
@@ -211,12 +213,16 @@ export interface Privacy {
 }
 
 export interface Sticker {
-  token: string;
+  /** Content hash; the same id WhatsApp uses to sync favourites and recents. */
+  id: string;
+  /** Local file, or null while a synced sticker is still downloading. */
+  token: string | null;
   width: number;
   height: number;
   animated: boolean;
   favorite: boolean;
   used: number;
+  remote: unknown | null;
 }
 
 export interface Cursor {
@@ -238,7 +244,7 @@ export interface Attachment {
 export type Outgoing =
   | { type: "text"; text: string; preview?: LinkPreview | null }
   | { type: "media"; file: Attachment; kind: string; caption?: string; viewOnce?: boolean; album?: string | null }
-  | { type: "sticker"; token: string }
+  | { type: "sticker"; id: string }
   | { type: "location"; lat: number; lng: number; name?: string; address?: string }
   | { type: "contacts"; jids: Jid[] }
   | { type: "poll"; question: string; options: string[]; selectable: number }
@@ -265,7 +271,8 @@ export type UiEvent =
   | { type: "recording"; level: number; elapsed: number }
   | { type: "progress"; chat: Jid; id: string; progress: number }
   | { type: "toast"; tone: string; text: string }
-  | { type: "badge"; count: number };
+  | { type: "badge"; count: number }
+  | { type: "stickers" };
 
 export interface InitData {
   session: Session;

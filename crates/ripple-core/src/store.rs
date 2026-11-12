@@ -60,6 +60,10 @@ const MIGRATIONS: &[&str] = &[
         favorite INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0
     ) WITHOUT ROWID;
     "#,
+    // v2: stickers are keyed by file hash (falls back to the token for old rows)
+    r#"
+    ALTER TABLE stickers RENAME COLUMN token TO id;
+    "#,
 ];
 
 /// Position of a message in a chat's timeline.
@@ -614,44 +618,79 @@ impl Store {
 
     // ───────────── stickers ─────────────
 
+    fn read_stickers(&self, sql: &str, args: &[&dyn rusqlite::ToSql]) -> Vec<Sticker> {
+        let db = self.db();
+        let Ok(mut st) = db.prepare_cached(sql) else { return vec![] };
+        st.query_map(args, |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?))
+        })
+        .map(|rows| {
+            rows.flatten()
+                .filter_map(|(id, d, fav, used)| {
+                    let mut s: Sticker = serde_json::from_str(&d).ok()?;
+                    s.id = id;
+                    s.favorite = fav;
+                    s.used = used;
+                    Some(s)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// Favourites plus the most recently sent stickers, newest first.
     pub fn stickers(&self) -> Vec<Sticker> {
+        self.read_stickers(
+            "SELECT id,data,favorite,used FROM stickers WHERE favorite=1 OR used>0 ORDER BY used DESC LIMIT 400",
+            &[],
+        )
+    }
+
+    /// Sticker messages the user sent, newest first: `(chat, id, ts)`.
+    pub fn sent_stickers(&self, limit: usize) -> Vec<(String, String, i64)> {
         let db = self.db();
         let Ok(mut st) =
-            db.prepare_cached("SELECT data,favorite,used FROM stickers ORDER BY used DESC LIMIT 400")
+            db.prepare_cached("SELECT chat,id,ts FROM messages WHERE kind='sticker' AND from_me=1 ORDER BY ts DESC LIMIT ?1")
         else {
             return vec![];
         };
-        st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?, r.get::<_, i64>(2)?)))
-            .map(|rows| {
-                rows.flatten()
-                    .filter_map(|(d, fav, used)| {
-                        let mut s: Sticker = serde_json::from_str(&d).ok()?;
-                        s.favorite = fav;
-                        s.used = used;
-                        Some(s)
-                    })
-                    .collect()
-            })
+        st.query_map([limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.flatten().collect())
             .unwrap_or_default()
     }
 
-    /// Records that a sticker was seen/used so it shows up under "Recent".
-    pub fn touch_sticker(&self, s: &Sticker, now: i64) -> Result<()> {
+    pub fn sticker(&self, id: &str) -> Option<Sticker> {
+        self.read_stickers("SELECT id,data,favorite,used FROM stickers WHERE id=?1", &[&id]).pop()
+    }
+
+    pub fn sticker_by_token(&self, token: &str) -> Option<Sticker> {
+        self.read_stickers(
+            "SELECT id,data,favorite,used FROM stickers WHERE id=?1 OR json_extract(data,'$.token')=?1 LIMIT 1",
+            &[&token],
+        )
+        .pop()
+    }
+
+    /// Inserts or replaces a sticker row, including its flags.
+    pub fn put_sticker(&self, s: &Sticker) -> Result<()> {
         self.db().execute(
-            "INSERT INTO stickers(token,data,favorite,used) VALUES(?1,?2,?3,?4)
-             ON CONFLICT(token) DO UPDATE SET used=?4",
-            params![s.token, serde_json::to_string(s)?, s.favorite, now],
+            "INSERT INTO stickers(id,data,favorite,used) VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET data=?2, favorite=?3, used=?4",
+            params![s.id, serde_json::to_string(s)?, s.favorite, s.used],
         )?;
         Ok(())
     }
 
-    pub fn favorite_sticker(&self, token: &str, on: bool) -> Result<()> {
-        self.db().execute("UPDATE stickers SET favorite=?2 WHERE token=?1", params![token, on])?;
-        Ok(())
+    /// Applies `f` to the sticker with this id (a blank one when unknown) and stores it.
+    pub fn update_sticker(&self, id: &str, f: impl FnOnce(&mut Sticker)) -> Result<Sticker> {
+        let mut s = self.sticker(id).unwrap_or_else(|| Sticker { id: id.to_string(), width: 512, height: 512, ..Default::default() });
+        f(&mut s);
+        self.put_sticker(&s)?;
+        Ok(s)
     }
 
-    pub fn remove_sticker(&self, token: &str) -> Result<()> {
-        self.db().execute("DELETE FROM stickers WHERE token=?1", [token])?;
+    pub fn remove_sticker(&self, id: &str) -> Result<()> {
+        self.db().execute("DELETE FROM stickers WHERE id=?1", [id])?;
         Ok(())
     }
 }
@@ -777,7 +816,7 @@ mod tests {
         let c = s.upsert_contact("1@s.whatsapp.net", |c| c.push_name = Some("Ana".into()));
         assert_eq!(c.display(), "Ana");
         s.set_meta("settings", &Settings::default()).unwrap();
-        assert_eq!(s.meta::<Settings>("settings").unwrap().accent, "tidal");
+        assert_eq!(s.meta::<Settings>("settings").unwrap().accent, "mono");
 
         s.delete_chat("a").unwrap();
         assert!(s.chat("a").is_none());
@@ -795,6 +834,26 @@ mod tests {
         assert!(s.chats().is_empty() && s.search("secret", None, 5).is_empty());
         assert!(s.meta::<String>("me").is_none());
         assert_eq!(s.meta::<Settings>("settings").unwrap().accent, "coral");
+    }
+
+    #[test]
+    fn sticker_library() {
+        let s = Store::memory().unwrap();
+        s.update_sticker("hashA", |x| {
+            x.token = Some("s/a.webp".into());
+            x.used = 50;
+        })
+        .unwrap();
+        s.update_sticker("hashB", |x| x.favorite = true).unwrap();
+        s.update_sticker("hashC", |x| x.token = Some("s/c.webp".into())).unwrap();
+        let list = s.stickers();
+        assert_eq!(list.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["hashA", "hashB"], "unused, unfavourited stickers stay hidden");
+        assert_eq!(s.sticker_by_token("s/a.webp").unwrap().id, "hashA");
+        let b = s.update_sticker("hashB", |x| x.used = 99).unwrap();
+        assert!(b.favorite, "updating keeps flags");
+        assert_eq!(s.stickers()[0].id, "hashB");
+        s.remove_sticker("hashA").unwrap();
+        assert!(s.sticker("hashA").is_none());
     }
 
     #[test]

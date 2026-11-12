@@ -161,7 +161,7 @@
   width: 20px;
   height: 20px;
   margin: 0 4px 8px 0;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   border: 1.5px solid var(--line-strong);
   flex: none;
   display: grid;
@@ -216,7 +216,7 @@
   width: 100%;
   margin: 1px 0 5px;
   padding: 5px 8px 6px 9px;
-  border-radius: 9px;
+  border-radius: 4px;
   background: color-mix(in oklab, var(--text) 7%, transparent);
   border-left: 3px solid var(--tone, var(--accent));
   text-align: left;
@@ -227,7 +227,7 @@
 .quote .q-name { font-size: var(--fs-12); font-weight: 650; color: var(--tone, var(--accent)); }
 .quote .q-text { font-size: var(--fs-13); color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .quote .q-text .icon { display: inline; font-size: 13px; vertical-align: -2px; margin-right: 4px; }
-.quote img { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; flex: none; margin: 0 -2px 0 auto; }
+.quote img { width: 42px; height: 42px; border-radius: 3px; object-fit: cover; flex: none; margin: 0 -2px 0 auto; }
 .bubble.media > .quote { margin: 3px; width: calc(100% - 6px); }
 
 /* ───────────── rich text ───────────── */
@@ -237,10 +237,10 @@
 .rich ul, .rich ol { margin: 0; padding-left: 22px; }
 .rich li { padding-left: 2px; }
 .rich blockquote { margin: 2px 0; padding: 1px 0 1px 10px; border-left: 3px solid var(--line-strong); color: var(--text-2); white-space: pre-wrap; }
-.rich code { font-family: var(--font-mono); font-size: 0.88em; padding: 1px 5px; border-radius: 5px; background: color-mix(in oklab, var(--text) 9%, transparent); }
-.rich pre { margin: 3px 0; padding: 8px 10px; border-radius: 9px; background: color-mix(in oklab, var(--text) 8%, transparent); font-family: var(--font-mono); font-size: 0.86em; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; }
+.rich code { font-family: var(--font-mono); font-size: 0.88em; padding: 1px 5px; border-radius: 3px; background: color-mix(in oklab, var(--text) 9%, transparent); }
+.rich pre { margin: 3px 0; padding: 8px 10px; border-radius: 4px; background: color-mix(in oklab, var(--text) 8%, transparent); font-family: var(--font-mono); font-size: 0.86em; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; }
 .rich a { text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent) 45%, transparent); text-underline-offset: 2px; }
-.rich .mention { color: var(--accent); font-weight: 580; cursor: pointer; border-radius: 4px; }
+.rich .mention { color: var(--accent); font-weight: 580; cursor: pointer; border-radius: 2px; }
 .rich .mention:hover { background: var(--accent-soft); }
 .rich.jumbo { font-size: 44px; line-height: 1.15; letter-spacing: 2px; }
 .rich.jumbo.n2 { font-size: 38px; }
@@ -305,7 +305,7 @@
   animation: reaction-pop var(--t-slower) var(--spring-bouncy);
 }
 .reaction:hover { transform: scale(1.08); background: var(--surface-3); }
-.reaction:active { transform: scale(0.94); }
+.reaction:active { transform: scale(0.97); transition: none; }
 .reaction.mine { background: color-mix(in oklab, var(--accent) 26%, var(--surface-2)); box-shadow: 0 0 0 2px var(--bg), inset 0 0 0 1px var(--bubble-out-line); }
 .reaction b { font-size: var(--fs-11); font-weight: 650; color: var(--text-2); font-variant-numeric: tabular-nums; }
 @keyframes reaction-pop { from { transform: scale(0.2); opacity: 0; } }
@@ -324,7 +324,7 @@
 }
 .msg:hover .msg-actions, .msg.menu-open .msg-actions { opacity: 1; transform: none; pointer-events: auto; }
 .msg.selecting .msg-actions { display: none; }
-.msg-actions .icon-btn { width: 30px; height: 30px; border-radius: 50%; color: var(--text-3); }
+.msg-actions .icon-btn { width: 30px; height: 30px; border-radius: var(--r-round); color: var(--text-3); }
 .msg-actions .icon-btn .icon { font-size: 18px; }
 
 .react-bar { display: flex; align-items: center; gap: 2px; padding: 2px; }
@@ -332,7 +332,7 @@
 .react-bar button {
   width: 38px;
   height: 38px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   font-size: 23px;
   line-height: 1;
   display: grid;
@@ -342,7 +342,7 @@
   animation-delay: calc(var(--i) * 22ms);
 }
 .react-bar button:hover { transform: scale(1.28) translateY(-2px); }
-.react-bar button:active { transform: scale(0.9); }
+.react-bar button:active { transform: scale(0.97); transition: none; }
 .react-bar button.mine { background: var(--accent-soft); }
 .react-bar button.more { color: var(--text-2); font-size: 20px; }
 .react-bar button.more:hover { transform: none; background: var(--surface-2); }
@@ -352,7 +352,7 @@
 .photo {
   position: relative;
   display: block;
-  border-radius: 15px;
+  border-radius: 7px;
   overflow: hidden;
   background: var(--surface-2);
   cursor: pointer;
@@ -401,7 +401,7 @@
 .photo .tag .icon { font-size: 13px; }
 
 .album { display: grid; gap: 3px; grid-template-columns: 1fr 1fr; width: min(380px, 100%); }
-.album .photo { border-radius: 6px; aspect-ratio: 1; width: 100%; }
+.album .photo { border-radius: 3px; aspect-ratio: 1; width: 100%; }
 .album.n3 .photo:first-child { grid-column: span 2; aspect-ratio: 2 / 1.1; }
 .album .photo:first-child { border-top-left-radius: 15px; }
 .album.n3 .photo:first-child { border-top-right-radius: 15px; }
@@ -412,7 +412,7 @@
 
 .sticker { width: 150px; height: 150px; object-fit: contain; cursor: pointer; transition: transform var(--t-base) var(--spring); }
 .sticker:hover { transform: scale(1.04) rotate(-1.5deg); }
-.sticker-skel { width: 150px; height: 150px; border-radius: 28px; background: var(--surface-1); display: grid; place-items: center; color: var(--text-3); }
+.sticker-skel { width: 150px; height: 150px; border-radius: var(--r-lg); background: var(--surface-1); display: grid; place-items: center; color: var(--text-3); }
 
 .once {
   display: flex;
@@ -423,7 +423,7 @@
   color: var(--text);
   cursor: pointer;
 }
-.once .ring { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; border: 1.5px dashed var(--accent); color: var(--accent); }
+.once .ring { width: 34px; height: 34px; border-radius: var(--r-round); display: grid; place-items: center; border: 1.5px dashed var(--accent); color: var(--accent); }
 .once.opened { color: var(--text-3); cursor: default; }
 .once.opened .ring { border-color: var(--line-strong); color: var(--text-3); }
 
@@ -432,16 +432,16 @@
 .voice .play {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   display: grid;
   place-items: center;
   background: var(--accent);
   color: var(--accent-ink);
   flex: none;
-  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast);
+  transition: background var(--t-fast);
 }
 .voice .play:hover { background: var(--accent-strong); }
-.voice .play:active { transform: scale(0.92); }
+.voice .play:active { transform: scale(0.97); transition: none; }
 .voice .play .icon { font-size: 19px; }
 .voice .play .icon.swap { animation: tick-in var(--t-base) var(--spring-bouncy); }
 .voice .wave { flex: 1; height: 30px; display: flex; align-items: center; gap: 2px; cursor: pointer; touch-action: none; }
@@ -454,9 +454,9 @@
 .voice .mic-av { position: relative; flex: none; }
 .voice .mic-av .icon { position: absolute; right: -4px; bottom: -2px; font-size: 16px; color: var(--accent); filter: drop-shadow(0 0 0 2px var(--bubble-in)); }
 
-.doc { display: flex; align-items: center; gap: 11px; width: 320px; max-width: 100%; padding: 6px 6px 6px 7px; border-radius: 12px; background: color-mix(in oklab, var(--text) 6%, transparent); cursor: pointer; transition: background var(--t-fast); }
+.doc { display: flex; align-items: center; gap: 11px; width: 320px; max-width: 100%; padding: 6px 6px 6px 7px; border-radius: 6px; background: color-mix(in oklab, var(--text) 6%, transparent); cursor: pointer; transition: background var(--t-fast); }
 .doc:hover { background: color-mix(in oklab, var(--text) 10%, transparent); }
-.doc .ficon { width: 40px; height: 46px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.doc .ficon { width: 40px; height: 46px; border-radius: 4px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
 .doc .ficon .icon { font-size: 24px; }
 .doc .fname { font-size: var(--fs-14); font-weight: 580; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
 .doc .fmeta { font-size: var(--fs-12); color: var(--text-3); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.02em; }
@@ -467,7 +467,7 @@
 .linkcard {
   display: block;
   margin: -3px -7px 6px;
-  border-radius: 12px;
+  border-radius: 6px;
   overflow: hidden;
   background: color-mix(in oklab, var(--text) 6%, transparent);
   color: inherit;
@@ -487,7 +487,7 @@
 .place .map {
   position: relative;
   height: 128px;
-  border-radius: 15px;
+  border-radius: 7px;
   overflow: hidden;
   background:
     linear-gradient(115deg, transparent 46%, color-mix(in oklab, var(--text) 9%, transparent) 46% 49%, transparent 49%),
@@ -530,7 +530,7 @@
   color: transparent;
   transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-base) var(--spring-bouncy);
 }
-.poll.multi .opt .box { border-radius: 6px; }
+.poll.multi .opt .box { border-radius: 3px; }
 .poll .opt:hover .box { border-color: var(--accent); }
 .poll .opt.mine .box { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); transform: scale(1.06); }
 .poll .opt .box .icon { font-size: 12px; }
@@ -538,8 +538,8 @@
 .poll .opt .faces { display: flex; margin-left: auto; }
 .poll .opt .faces .avatar { margin-left: -6px; box-shadow: 0 0 0 1.5px var(--bubble-in); }
 .msg.out .poll .opt .faces .avatar { box-shadow: 0 0 0 1.5px var(--bubble-out); }
-.poll .bar { height: 6px; margin: 6px 0 0 28px; border-radius: 3px; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
-.poll .bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transform-origin: left; transition: width var(--t-slower) var(--spring); }
+.poll .bar { height: 6px; margin: 6px 0 0 28px; border-radius: 2px; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
+.poll .bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transform-origin: left; transition: width var(--t-slower) var(--spring); }
 .poll .p-foot { display: flex; justify-content: center; margin: 6px -11px -8px; border-top: 1px solid var(--line); }
 .poll .p-foot button { flex: 1; height: 36px; color: var(--accent); font-weight: 600; font-size: var(--fs-13); }
 .poll .p-foot button:hover { background: var(--accent-softer); }
@@ -547,7 +547,7 @@
 /* event */
 .event { width: 320px; max-width: 100%; padding: 1px 0 0; }
 .event .e-top { display: flex; gap: 12px; align-items: flex-start; }
-.event .e-date { width: 46px; border-radius: 11px; overflow: hidden; text-align: center; background: color-mix(in oklab, var(--text) 7%, transparent); flex: none; }
+.event .e-date { width: 46px; border-radius: 5px; overflow: hidden; text-align: center; background: color-mix(in oklab, var(--text) 7%, transparent); flex: none; }
 .event .e-date b { display: block; font-size: 10px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 0 2px; background: var(--accent); color: var(--accent-ink); }
 .event .e-date span { display: block; font-size: var(--fs-20); font-weight: 650; padding: 3px 0 5px; font-family: var(--font-display); }
 .event .e-name { font-weight: 640; font-size: var(--fs-15); line-height: 1.25; }
@@ -557,9 +557,9 @@
 .event .e-desc { font-size: var(--fs-13); color: var(--text-2); margin-top: 8px; line-height: 1.4; }
 .event .e-who { font-size: var(--fs-12); color: var(--text-3); margin-top: 8px; }
 .event .e-actions { display: flex; gap: 6px; margin-top: 10px; }
-.event .e-actions button { flex: 1; height: 32px; border-radius: var(--r-full); font-size: var(--fs-13); font-weight: 600; background: color-mix(in oklab, var(--text) 8%, transparent); transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out); }
+.event .e-actions button { flex: 1; height: 32px; border-radius: var(--r-full); font-size: var(--fs-13); font-weight: 600; background: color-mix(in oklab, var(--text) 8%, transparent); transition: background var(--t-fast), color var(--t-fast); }
 .event .e-actions button:hover { background: color-mix(in oklab, var(--text) 13%, transparent); }
-.event .e-actions button:active { transform: scale(0.96); }
+.event .e-actions button:active { transform: scale(0.97); transition: none; }
 .event .e-actions button.on { background: var(--accent); color: var(--accent-ink); }
 
 .gone { display: flex; align-items: center; gap: 7px; color: var(--text-3); font-style: italic; font-size: var(--fs-14); }
@@ -582,17 +582,17 @@
   z-index: 4;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   display: grid;
   place-items: center;
   background: var(--overlay);
   box-shadow: var(--shadow-float);
   color: var(--text-2);
   animation: pop-in var(--t-slow) var(--spring-bouncy);
-  transition: transform var(--t-fast) var(--ease-out), color var(--t-fast);
+  transition: color var(--t-fast);
 }
 .jump:hover { color: var(--text); transform: translateY(-1px); }
-.jump:active { transform: scale(0.93); }
+.jump:active { transform: scale(0.97); transition: none; }
 .jump .badge { position: absolute; top: -7px; right: -3px; animation: badge-pop var(--t-slower) var(--spring-bouncy); }
 
 /* ───────────── composer ───────────── */
@@ -600,14 +600,14 @@
 .composer-box {
   display: flex;
   flex-direction: column;
-  border-radius: 22px;
+  border-radius: 10px;
   background: var(--surface-1);
   border: 1px solid transparent;
   transition: border-color var(--t-base), background var(--t-base);
 }
 .composer-box:focus-within { border-color: var(--line-strong); }
 .composer-row { display: flex; align-items: flex-end; gap: 2px; padding: 4px; min-height: 44px; }
-.composer-row .icon-btn { border-radius: 50%; }
+.composer-row .icon-btn { border-radius: var(--r-round); }
 .composer textarea {
   flex: 1;
   min-width: 0;
@@ -626,15 +626,15 @@
   position: relative;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   flex: none;
   display: grid;
   place-items: center;
   color: var(--text-2);
-  transition: background var(--t-base) var(--ease-out), color var(--t-base), transform var(--t-fast) var(--ease-out);
+  transition: background var(--t-base) var(--ease-out), color var(--t-base);
 }
 .send-btn:hover { background: var(--surface-2); color: var(--text); }
-.send-btn:active { transform: scale(0.9); }
+.send-btn:active { transform: scale(0.97); transition: none; }
 .send-btn.ready { background: var(--accent); color: var(--accent-ink); }
 .send-btn.ready:hover { background: var(--accent-strong); }
 .send-btn .icon { position: absolute; font-size: 20px; transition: transform var(--t-slow) var(--spring), opacity var(--t-fast); }
@@ -646,7 +646,7 @@
   gap: 10px;
   margin: 6px 6px 0;
   padding: 7px 6px 7px 11px;
-  border-radius: 15px;
+  border-radius: 7px;
   background: var(--surface-2);
   border-left: 3px solid var(--tone, var(--accent));
   animation: ctx-in var(--t-slow) var(--spring);
@@ -657,7 +657,7 @@
 .composer-ctx .c-label { font-size: var(--fs-12); font-weight: 650; color: var(--tone, var(--accent)); display: flex; align-items: center; gap: 5px; }
 .composer-ctx .c-label .icon { font-size: 13px; }
 .composer-ctx .c-text { font-size: var(--fs-13); color: var(--text-2); }
-.composer-ctx img { width: 38px; height: 38px; border-radius: 7px; object-fit: cover; flex: none; }
+.composer-ctx img { width: 38px; height: 38px; border-radius: 4px; object-fit: cover; flex: none; }
 .composer-ctx.link { border-left-color: var(--line-strong); }
 
 .composer-note {
@@ -667,7 +667,7 @@
   gap: 8px;
   min-height: 46px;
   padding: 0 16px;
-  border-radius: 22px;
+  border-radius: 10px;
   background: var(--surface-1);
   color: var(--text-2);
   font-size: var(--fs-13);
@@ -696,7 +696,7 @@
   animation: rise-in var(--t-base) var(--ease-out);
   z-index: 6;
 }
-.suggest button { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 9px; border-radius: 10px; text-align: left; }
+.suggest button { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 9px; border-radius: 5px; text-align: left; }
 .suggest button.active, .suggest button:hover { background: var(--surface-2); }
 .suggest .s-name { font-weight: 580; }
 .suggest .s-sub { color: var(--text-3); font-size: var(--fs-12); }

@@ -1,4 +1,5 @@
 import { Match, Show, Switch, createEffect, onCleanup, onMount } from "solid-js";
+import { loadFont } from "./lib/fonts";
 import { inTauri } from "./lib/ipc";
 import { act, boot, closeChat, derived, openChat, openModal, setState, state } from "./lib/state";
 import { Conversation } from "./components/Conversation";
@@ -18,6 +19,8 @@ function useAppearance() {
     const dark = s.theme === "dark" || (s.theme === "system" && media.matches);
     root.dataset.theme = dark ? "dark" : "light";
     root.dataset.accent = s.accent;
+    root.dataset.font = s.font;
+    void loadFont(s.font);
     root.dataset.density = s.compact ? "compact" : "comfortable";
     root.dataset.motion = s.reduceMotion === "on" ? "reduce" : s.reduceMotion === "off" ? "full" : "system";
     root.dataset.platform = state.platform;
@@ -26,6 +29,7 @@ function useAppearance() {
     try {
       localStorage.setItem("ripple.theme", s.theme);
       localStorage.setItem("ripple.accent", s.accent);
+      localStorage.setItem("ripple.font", s.font);
     } catch { /* storage unavailable */ }
   };
   createEffect(apply);

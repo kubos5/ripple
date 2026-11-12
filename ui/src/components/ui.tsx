@@ -13,7 +13,7 @@ export function Icon(props: { name: IconName; size?: number; class?: string; sty
   return (
     <svg
       class={`icon ${props.class ?? ""}`}
-      viewBox="0 0 256 256"
+      viewBox="0 -960 960 960"
       aria-hidden="true"
       style={{ ...(props.size ? { "font-size": `${props.size}px` } : {}), ...props.style }}
       innerHTML={ICONS[props.name]}
@@ -94,6 +94,8 @@ interface OpenMenu {
   render?: (close: () => void) => JSX.Element;
   align?: "left" | "right";
   class?: string;
+  /** The control that opened the menu; clicking it again closes the menu. */
+  anchor?: HTMLElement | null;
 }
 
 const [menu, setMenu] = createSignal<OpenMenu | null>(null);
@@ -110,6 +112,14 @@ export function closeMenu() {
 
 /** Opens a context menu at a pointer event or anchored under an element. */
 export function openMenu(at: MouseEvent | HTMLElement, items: MenuEntry[], opts: Partial<OpenMenu> = {}) {
+  const anchor =
+    at instanceof HTMLElement ? at : at.type === "click" && at.currentTarget instanceof HTMLElement ? at.currentTarget : null;
+  const open = menu();
+  if (anchor && open && !menuClosing() && open.anchor === anchor) {
+    if (!(at instanceof HTMLElement)) at.preventDefault();
+    closeMenu();
+    return;
+  }
   let x: number, y: number;
   if (at instanceof HTMLElement) {
     const r = at.getBoundingClientRect();
@@ -121,7 +131,7 @@ export function openMenu(at: MouseEvent | HTMLElement, items: MenuEntry[], opts:
     y = at.clientY;
   }
   setMenuClosing(false);
-  setMenu({ x, y, items: items.filter((i) => !i.hidden), ...opts });
+  setMenu({ x, y, items: items.filter((i) => !i.hidden), anchor, ...opts });
 }
 
 export function MenuHost() {
@@ -157,7 +167,9 @@ export function MenuHost() {
     }
   };
   const onDown = (e: MouseEvent) => {
-    if (menu() && el && !el.contains(e.target as Node)) closeMenu();
+    const m = menu();
+    // A press on the control that opened the menu is left to its click, which toggles the menu shut.
+    if (m && el && !el.contains(e.target as Node) && !m.anchor?.contains(e.target as Node)) closeMenu();
   };
   onMount(() => {
     window.addEventListener("keydown", onKey, true);

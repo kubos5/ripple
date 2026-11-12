@@ -379,7 +379,7 @@ export function Composer(props: { chat: Chat }) {
             </Show>
             <div class="composer-row">
               <IconButton icon="plus" tip="Attach" tipPos="top" onClick={attach} disabled={!!state.editing} />
-              <IconButton icon="smiley" tip="Emoji & stickers" tipPos="top" on={!!picker()} onClick={() => setPicker(picker() ? null : "emoji")} />
+              <IconButton icon="smiley" tip={picker() ? undefined : "Emoji & stickers"} aria-label="Emoji & stickers" tipPos="top" on={!!picker()} onClick={() => setPicker(picker() ? null : "emoji")} />
               <textarea
                 ref={area}
                 rows={1}

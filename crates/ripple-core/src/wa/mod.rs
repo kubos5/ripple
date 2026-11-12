@@ -21,7 +21,6 @@ use whatsapp_rust::Jid as WaJid;
 use whatsapp_rust::bot::{Bot, BotHandle, EventDelivery};
 use whatsapp_rust::client::Client;
 use whatsapp_rust::store::SqliteStore;
-use whatsapp_rust::waproto::whatsapp as wa;
 
 use crate::api::{NetOp, Network};
 use crate::app::App;
@@ -61,6 +60,19 @@ pub(crate) struct Inner {
     first_sync: AtomicBool,
     last_history: AtomicI64,
     avatars_busy: AtomicBool,
+}
+
+pub(crate) struct Addr {
+    chat: WaJid,
+    sender: Option<WaJid>,
+    id: whatsapp_rust::MessageId,
+    from_me: bool,
+}
+
+impl Addr {
+    pub(crate) fn r(&self) -> Result<whatsapp_rust::MessageRef<'_>> {
+        err(whatsapp_rust::MessageRef::new(&self.chat, self.id.clone(), self.sender.as_ref(), self.from_me))
+    }
 }
 
 pub struct LiveNet {
@@ -157,14 +169,15 @@ impl Inner {
         member.to_string()
     }
 
-    pub(crate) fn key_of(&self, m: &Message) -> wa::MessageKey {
-        wa::MessageKey {
-            remote_jid: Some(m.chat.clone()),
-            from_me: Some(m.from_me),
-            id: Some(m.id.clone()),
-            participant: (is_group(&m.chat) && !m.from_me).then(|| self.wire_member(&m.chat, &m.sender)),
-            ..Default::default()
-        }
+    /// Owned addressing of a stored message, from which the library's
+    /// borrowed `MessageRef` is taken for each operation.
+    pub(crate) fn addr_of(&self, m: &Message) -> Result<Addr> {
+        Ok(Addr {
+            chat: parse_jid(&m.chat)?,
+            sender: self.participant_of(m),
+            id: err(whatsapp_rust::MessageId::new(&m.id))?,
+            from_me: m.from_me,
+        })
     }
 
     pub(crate) fn participant_of(&self, m: &Message) -> Option<WaJid> {
@@ -187,7 +200,7 @@ impl Inner {
         if run.is_some() {
             return Ok(());
         }
-        let backend = err(SqliteStore::new(&Self::wa_db(&app)).await)?;
+        let backend = err(SqliteStore::open(&Self::wa_db(&app)).await)?;
         let me = self.clone();
         let mut builder = Bot::builder()
             .with_backend(backend)
@@ -216,7 +229,7 @@ impl Inner {
         let running = self.run.lock().await.take();
         *self.client.write().unwrap_or_else(|e| e.into_inner()) = None;
         if let Some(r) = running {
-            r.handle.shutdown().await;
+            let _ = r.handle.shutdown().await;
         }
     }
 
@@ -268,7 +281,7 @@ impl Network for LiveNet {
             }
             NetOp::Logout => {
                 if let Ok(client) = self.inner.client() {
-                    client.logout().await;
+                    let _ = client.logout().await;
                 }
                 self.inner.stop().await;
                 self.inner.forget_session(&app);
@@ -313,7 +326,7 @@ pub(crate) fn group_from(inner: &Inner, me: &str, md: &whatsapp_rust::features::
     let joined = participants.is_empty() || participants.iter().any(|p| p.id == me);
     Group {
         id,
-        subject: md.subject.clone(),
+        subject: md.subject.clone().unwrap_or_default(),
         description: md.description.clone().filter(|d| !d.is_empty()),
         owner: md.creator.as_ref().map(|c| inner.canon(c, md.creator_pn.as_ref())),
         created_at: md.creation_time.unwrap_or(0) as i64 * 1000,
@@ -330,7 +343,7 @@ pub(crate) fn group_from(inner: &Inner, me: &str, md: &whatsapp_rust::features::
         pending: vec![],
         joined,
         avatar: None,
-        size: md.size.unwrap_or(md.participants.len() as u32),
+        size: md.participant_count.unwrap_or(md.participants.len() as u32),
     }
 }
 

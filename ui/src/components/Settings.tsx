@@ -2,6 +2,7 @@
 
 import { For, type JSX, Match, Show, Switch, createResource, createSignal } from "solid-js";
 import { call, inTauri } from "../lib/ipc";
+import { FONTS, loadAllFonts } from "../lib/fonts";
 import { ephemeralLabel, fileSize, phone, plural } from "../lib/format";
 import { act, contactName, openModal, state, toast, updateSettings } from "../lib/state";
 import type { Privacy } from "../lib/types";
@@ -21,9 +22,10 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "account", label: "Account", icon: "device-mobile" },
 ];
 
+// The default accent follows the theme: white in dark mode, black in light mode.
 const ACCENTS: [string, string, string][] = [
-  ["tidal", "Tidal", "#2fd0a5"], ["coral", "Coral", "#ff7a59"], ["amber", "Amber", "#f5a623"],
-  ["sky", "Sky", "#3fb1f5"], ["rose", "Rose", "#f0629e"], ["graphite", "Graphite", "#8a8d93"],
+  ["mono", "Default", "var(--text)"], ["tidal", "Tidal", "#2fd0a5"], ["coral", "Coral", "#ff7a59"],
+  ["amber", "Amber", "#f5a623"], ["sky", "Sky", "#3fb1f5"], ["rose", "Rose", "#f0629e"],
 ];
 
 function Row(props: { title: string; sub?: string; icon?: IconName; children?: JSX.Element; onClick?: () => void; danger?: boolean }) {
@@ -105,10 +107,16 @@ function ProfilePane() {
 
 function AppearancePane() {
   const s = () => state.settings;
-  const themes: ["system" | "light" | "dark", string, string, string][] = [
-    ["system", "System", "linear-gradient(90deg, #f4f4f2 50%, #1b1c1e 50%)", "linear-gradient(90deg, #fff 50%, #121314 50%)"],
-    ["light", "Light", "#f4f4f2", "#ffffff"],
-    ["dark", "Dark", "#1b1c1e", "#121314"],
+  loadAllFonts();
+  const light = { "--side": "#f3f3f1", "--main": "#ffffff", "--in": "#e9e9e7", "--out": "#d6d6d4" };
+  const dark = { "--side": "#1b1c1e", "--main": "#121314", "--in": "#2a2b2e", "--out": "#46474b" };
+  const mock = (colors: Record<string, string>, half = false) => (
+    <div class={`mock ${half ? "half" : ""}`} style={colors}><i /><b><span /><span /></b></div>
+  );
+  const themes: ["system" | "light" | "dark", string, () => JSX.Element][] = [
+    ["system", "System", () => <>{mock(light)}{mock(dark, true)}</>],
+    ["light", "Light", () => mock(light)],
+    ["dark", "Dark", () => mock(dark)],
   ];
   return (
     <>
@@ -116,9 +124,9 @@ function AppearancePane() {
       <div class="card">
         <div class="theme-pick">
           <For each={themes}>
-            {([id, label, side, main]) => (
+            {([id, label, thumb]) => (
               <button class={s().theme === id ? "on" : ""} onClick={() => updateSettings({ theme: id })}>
-                <div class="thumb"><i style={{ background: side }} /><i style={{ background: main }} /></div>
+                <div class="thumb">{thumb()}</div>
                 {label}
               </button>
             )}
@@ -130,8 +138,21 @@ function AppearancePane() {
         <div class="swatches">
           <For each={ACCENTS}>
             {([id, label, color]) => (
-              <button class={`swatch ${s().accent === id ? "on" : ""}`} style={{ "--c": color }} title={label} aria-label={label} onClick={() => updateSettings({ accent: id })}>
+              <button class={`swatch ${s().accent === id ? "on" : ""} ${id}`} style={{ "--c": color }} title={label} aria-label={label} onClick={() => updateSettings({ accent: id })}>
                 <Icon name="check" />
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+      <h3>Font</h3>
+      <div class="card">
+        <div class="font-pick">
+          <For each={FONTS}>
+            {(f) => (
+              <button class={s().font === f.id ? "on" : ""} onClick={() => updateSettings({ font: f.id })}>
+                <span class="sample" style={{ "font-family": f.sample }}>Aa</span>
+                {f.label}
               </button>
             )}
           </For>
@@ -226,7 +247,7 @@ function ChatsPane() {
       <Show when={inTauri}>
         <h3>Desktop</h3>
         <div class="card">
-          <Check title="Keep running in the tray" sub="Closing the window keeps Ripple connected in the background" on={s().closeToTray} set={(v) => updateSettings({ closeToTray: v })} />
+          <Check title={state.platform === "macos" ? "Keep running when closed" : "Keep running in the tray"} sub={state.platform === "macos" ? "Closing the window keeps Ripple connected; click its Dock icon to reopen it" : "Closing the window keeps Ripple connected in the background"} on={s().closeToTray} set={(v) => updateSettings({ closeToTray: v })} />
           <Check title="Open at login" on={s().autostart} set={(v) => updateSettings({ autostart: v })} />
         </div>
       </Show>

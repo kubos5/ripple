@@ -51,7 +51,7 @@ pub enum Outgoing {
         album: Option<String>,
     },
     /// Re-send a sticker already in the library.
-    Sticker { token: String },
+    Sticker { id: String },
     Location {
         lat: f64,
         lng: f64,
@@ -222,9 +222,12 @@ pub enum Request {
 
     // stickers
     Stickers,
-    StickerFavorite { token: String, on: bool },
-    StickerRemove { token: String },
+    StickerFavorite { id: String, on: bool },
+    /// Takes a sticker out of "Recent" (and deletes it if it is not a favourite).
+    StickerForget { id: String },
     StickerCreate { file: Attachment },
+    /// Adds the sticker in a received message to favourites.
+    StickerFromMessage { chat: Jid, id: String },
 
     // voice notes
     RecordStart,
@@ -271,6 +274,8 @@ pub enum UiEvent {
     Toast { tone: String, text: String },
     /// Total unread chats, for the tray/dock badge.
     Badge { count: u32 },
+    /// The sticker library changed (synced, downloaded, favourited).
+    Stickers,
 }
 
 // ───────────────────────────── core → network ─────────────────────────────
@@ -319,6 +324,14 @@ pub enum NetOp {
     PrivacySet { privacy: Privacy },
     RejectCall { id: String, from: Jid },
     DemoTrigger { what: String },
+    /// Fetches a library sticker's file; returns `{ token }`.
+    StickerDownload { sticker: Box<Sticker> },
+    /// Syncs a favourite change to the user's other devices.
+    StickerFavorite { sticker: Box<Sticker>, on: bool },
+    /// Syncs removing a sticker from "Recent".
+    StickerUnrecent { sticker: Box<Sticker> },
+    /// The library identity of a sticker message: `{ id, remote }`, or null.
+    StickerInfo { target: Box<Message> },
 }
 
 /// A network backend. It performs [`NetOp`]s and reports what happens on the

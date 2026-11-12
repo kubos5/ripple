@@ -9,7 +9,9 @@ use ripple_core::Ripple;
 use ripple_core::api::{Request, UiEvent};
 use tauri::http::{Response, StatusCode, header};
 use tauri::ipc::Channel;
+#[cfg(not(target_os = "macos"))]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(not(target_os = "macos"))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as _;
@@ -18,7 +20,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 struct Core(Arc<Ripple>);
 
-/// Whether closing the window should keep Ripple running in the tray.
+/// Whether closing the window should keep Ripple running (in the tray, or in the Dock on macOS).
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(true);
 
 #[tauri::command]
@@ -102,6 +104,8 @@ fn watch(app: AppHandle, core: Arc<Ripple>) {
     });
 }
 
+/// Windows and Linux get a tray icon to bring the window back. macOS has the Dock for that, so no menu bar icon.
+#[cfg(not(target_os = "macos"))]
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Ripple", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Ripple", true, None::<&str>)?;
@@ -178,6 +182,7 @@ fn main() {
             let core = tauri::async_runtime::block_on(Ripple::open(dir, demo))?;
             app.manage(Core(core.clone()));
             watch(app.handle().clone(), core);
+            #[cfg(not(target_os = "macos"))]
             build_tray(app.handle())?;
             Ok(())
         })

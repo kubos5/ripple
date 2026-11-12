@@ -12,20 +12,23 @@ live = ["dep:whatsapp-rust"]
 voice = ["dep:cpal", "dep:ropus", "dep:ogg"]
 
 [dependencies]
-whatsapp-rust = { version = "0.7", default-features = false, optional = true, features = [
+# Pinned to an upstream commit: 0.7.0 drops favourite-sticker sync and has no app-state resync.
+whatsapp-rust = { git = "https://github.com/oxidezap/whatsapp-rust", rev = "baa3cfa", default-features = false, optional = true, features = [
     "sqlite-storage",
+    "sqlite-storage-bundled",
     "tokio-transport",
     "tokio-runtime",
     "tokio-native",
     "ureq-client",
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "fs"] }
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
+sha2 = "0.10"
 log = "0.4"
 rand = "0.9"
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
