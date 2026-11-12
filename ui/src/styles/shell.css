@@ -26,33 +26,36 @@
   color: var(--accent);
 }
 :root[data-shell="tauri"][data-platform="macos"] .rail-mark { display: none; }
+/* The button holds the edge indicator and stays put; only its face shrinks when pressed. */
 .rail-btn {
   position: relative;
   display: grid;
-  place-items: center;
   width: 44px;
   height: 44px;
-  border-radius: var(--r-md);
   color: var(--text-3);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast);
+}
+.rail-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
 }
 .rail-btn .icon { font-size: 23px; }
-.rail-btn:hover { background: var(--surface-2); color: var(--text); }
-.rail-btn:active { transform: scale(0.97); transition: none; }
-.rail-btn.on { color: var(--accent); background: var(--accent-soft); }
-.rail-btn::before {
+.rail-btn:hover { color: var(--text); }
+.rail-btn:hover .rail-face { background: var(--surface-2); }
+.rail-btn:active .rail-face { transform: scale(0.97); }
+.rail-btn.on { color: var(--accent); }
+.rail-btn.on .rail-face { background: var(--accent-soft); }
+.rail-btn.on::before {
   content: "";
   position: absolute;
   left: calc((44px - var(--rail-w)) / 2);
-  top: 50%;
+  top: 12px;
   width: 4px;
   height: 20px;
   border-radius: 0 2px 2px 0;
   background: var(--accent);
-  transform: translateY(-50%) scaleY(0);
-  transition: transform var(--t-slow) var(--spring);
 }
-.rail-btn.on::before { transform: translateY(-50%) scaleY(1); }
 .rail-btn .badge {
   position: absolute;
   top: 2px;
@@ -62,18 +65,15 @@
   padding: 0 4px;
   font-size: 10px;
   box-shadow: 0 0 0 2.5px var(--bg-rail);
-  animation: badge-pop var(--t-slower) var(--spring-bouncy);
 }
 .rail-spacer { flex: 1; align-self: stretch; }
 .rail-me {
   margin-top: 6px;
-  border-radius: 30%;
-  transition: box-shadow var(--t-fast);
+  border-radius: 50%;
 }
 .rail-me:hover { box-shadow: 0 0 0 2px var(--bg-rail), 0 0 0 4px var(--line-strong); }
-.rail-me:active { transform: scale(0.97); transition: none; }
+.rail-me:active { transform: scale(0.97); }
 
-@keyframes badge-pop { from { transform: scale(0.4); } }
 
 /* ───────────── sidebar ───────────── */
 .sidebar {
@@ -100,9 +100,9 @@
   inset: 0 3px;
   background: var(--accent);
   opacity: 0;
-  transition: opacity var(--t-fast);
 }
-.sidebar-resize:hover::after, .sidebar-resize.dragging::after { opacity: 0.7; transition-delay: 150ms; }
+.sidebar-resize:hover::after { opacity: 0.7; transition: opacity 0s 150ms; }
+.sidebar-resize.dragging::after { opacity: 0.7; }
 
 .side-head {
   display: flex;
@@ -136,7 +136,6 @@
   font-size: 17px;
   color: var(--text-3);
   pointer-events: none;
-  transition: color var(--t-fast);
 }
 .search:focus-within .icon { color: var(--accent); }
 .search input {
@@ -147,7 +146,6 @@
   border: 1px solid transparent;
   background: var(--surface-1);
   cursor: text;
-  transition: background var(--t-fast), border-color var(--t-fast);
 }
 .search input::placeholder { color: var(--text-3); }
 .search input:hover { background: var(--surface-2); }
@@ -193,7 +191,6 @@
   padding: 0 12px;
   border-radius: var(--r-md);
   text-align: left;
-  transition: background var(--t-fast) var(--ease-out);
 }
 .chat-row:hover { background: var(--surface-1); }
 .chat-row.on { background: var(--surface-2); }
@@ -226,7 +223,6 @@
 .chat-row .preview .draft { color: var(--danger); font-weight: 600; flex: none; }
 .chat-row .marks { display: flex; align-items: center; gap: 5px; flex: none; color: var(--text-3); }
 .chat-row .marks .icon { font-size: 15px; }
-.chat-row .marks .badge { animation: badge-pop var(--t-slower) var(--spring-bouncy); }
 .chat-row .marks .at { background: var(--accent-soft); color: var(--accent); padding: 0; width: 20px; }
 .chat-row .marks .at .icon { font-size: 13px; color: inherit; }
 :root[data-density="compact"] .chat-row .avatar { --size: 40px !important; }
@@ -244,7 +240,6 @@
   padding: 7px 12px;
   border-radius: var(--r-md);
   text-align: left;
-  transition: background var(--t-fast) var(--ease-out);
 }
 .list-row:hover, .list-row.active { background: var(--surface-1); }
 .list-row .title { font-weight: 580; font-size: var(--fs-14); }
@@ -288,7 +283,6 @@
   background: var(--surface-1);
   text-align: left;
   width: calc(100% - 24px);
-  transition: background var(--t-fast);
 }
 .community-hero:hover { background: var(--surface-2); }
 .community-hero .name { font-weight: 640; font-size: var(--fs-15); }
@@ -318,17 +312,12 @@
 .blank .keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; margin-top: 22px; color: var(--text-3); font-size: var(--fs-12); }
 .blank .keys span { display: inline-flex; align-items: center; gap: 4px; }
 
+/* Still rings around a dot. Sized by inset rather than scale so every line stays 1.5px. */
 .ripple-mark { position: relative; width: 132px; height: 132px; margin-bottom: 14px; }
-.ripple-mark i {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--accent);
-  opacity: 0;
-  animation: ripple 4.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
-}
-.ripple-mark i:nth-child(2) { animation-delay: 1.4s; }
-.ripple-mark i:nth-child(3) { animation-delay: 2.8s; }
+.ripple-mark i { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--accent); }
+.ripple-mark i:nth-child(1) { inset: 40px; opacity: 0.6; }
+.ripple-mark i:nth-child(2) { inset: 20px; opacity: 0.32; }
+.ripple-mark i:nth-child(3) { opacity: 0.14; }
 .ripple-mark b {
   position: absolute;
   inset: 50%;
@@ -337,11 +326,6 @@
   margin: -7px;
   border-radius: 50%;
   background: var(--accent);
-}
-@keyframes ripple {
-  0% { transform: scale(0.1); opacity: 0; }
-  12% { opacity: 0.85; }
-  100% { transform: scale(1); opacity: 0; }
 }
 
 .banner {
@@ -356,7 +340,6 @@
   background: color-mix(in oklab, var(--warn) 14%, transparent);
   color: var(--warn);
   flex: none;
-  animation: drop-in var(--t-slow) var(--ease-out);
 }
 .banner .icon { font-size: 18px; }
 .banner.demo { background: var(--accent-softer); color: var(--text-2); }

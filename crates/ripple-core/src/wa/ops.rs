@@ -61,6 +61,177 @@ fn read_attachment(file: &Option<Attachment>) -> Result<Option<Vec<u8>>> {
     }
 }
 
+/// Everything needed to fetch one encrypted file, owned so its path can be
+/// replaced after the phone uploads the file again.
+#[derive(Clone)]
+struct MediaRef {
+    direct_path: String,
+    media_key: Vec<u8>,
+    file_sha256: Vec<u8>,
+    file_enc_sha256: Vec<u8>,
+    file_length: u64,
+    kind: MediaType,
+}
+
+impl MediaRef {
+    fn of(d: &dyn Downloadable) -> Option<MediaRef> {
+        Some(MediaRef {
+            direct_path: d.direct_path().filter(|p| !p.is_empty())?.to_string(),
+            media_key: d.media_key()?.to_vec(),
+            file_sha256: d.file_sha256()?.to_vec(),
+            file_enc_sha256: d.file_enc_sha256()?.to_vec(),
+            file_length: d.file_length().unwrap_or(0),
+            kind: d.app_info(),
+        })
+    }
+
+    /// The media of a stored message, with any newer path it was given.
+    fn of_stored(stored: &Stored) -> Option<MediaRef> {
+        let raw = stored.message()?;
+        let mut r = MediaRef::of(downloadable(&raw)?)?;
+        if !stored.direct_path.is_empty() {
+            r.direct_path = stored.direct_path.clone();
+        }
+        Some(r)
+    }
+
+    fn of_sticker(s: &Sticker, r: &RemoteSticker) -> MediaRef {
+        MediaRef {
+            direct_path: r.direct_path.clone(),
+            media_key: convert::unb64(&r.media_key),
+            file_sha256: convert::unb64(&s.id),
+            file_enc_sha256: convert::unb64(&r.file_enc_sha256),
+            file_length: r.file_length,
+            kind: MediaType::Sticker,
+        }
+    }
+
+    fn remote(&self, mimetype: &str) -> RemoteSticker {
+        RemoteSticker {
+            direct_path: self.direct_path.clone(),
+            media_key: convert::b64(&self.media_key),
+            file_enc_sha256: convert::b64(&self.file_enc_sha256),
+            file_length: self.file_length,
+            mimetype: mimetype.to_string(),
+        }
+    }
+}
+
+/// How one download attempt ended.
+enum Got {
+    /// Saved under this media token.
+    File(String),
+    /// WhatsApp's servers refused the path: it expired or the file was cleared.
+    Refused,
+}
+
+/// How a download that may ask the phone for help ended.
+enum Fetched {
+    File(String),
+    /// Not on the servers, and the phone couldn't (or had no way to) upload it again.
+    Gone,
+    /// The phone didn't answer in time; worth trying again later.
+    NoAnswer,
+}
+
+impl Inner {
+    /// One download, sharing the download limit. Brief network failures are
+    /// retried; a refused path is reported rather than retried.
+    async fn download_once(&self, app: &App, client: &Client, r: &MediaRef, folder: &str, ext: &str) -> Result<Got> {
+        let params = err(whatsapp_rust::download::DownloadParams::encrypted(
+            r.direct_path.clone(),
+            &r.media_key,
+            &r.file_sha256,
+            &r.file_enc_sha256,
+            r.file_length,
+            r.kind,
+        ))?;
+        let mut attempt = 0u32;
+        loop {
+            let res = {
+                let _slot = self.downloads.acquire().await?;
+                let (token, path) = app.media.fresh(folder, ext)?;
+                let file = std::fs::File::create(&path)?;
+                match client.download_to_writer(&params, file, Default::default()).await {
+                    Ok(_) => return Ok(Got::File(token)),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&path);
+                        e
+                    }
+                }
+            };
+            use whatsapp_rust::download::ClientDownloadError as E;
+            match res {
+                E::ReferenceRejected(_) => return Ok(Got::Refused),
+                E::HostsUnreachable(_) | E::MediaSession { .. } if attempt < 2 => {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(1200 * u64::from(attempt * attempt))).await;
+                }
+                e => bail!("{e}"),
+            }
+        }
+    }
+
+    /// Downloads `r`. If the servers refuse its path and `source` is the message
+    /// it belongs to, asks the phone to upload the file again (as WhatsApp's own
+    /// linked devices do) and downloads from the new path, which is left in `r`.
+    async fn fetch(&self, app: &App, client: &Client, r: &mut MediaRef, source: Option<&Message>, folder: &str, ext: &str) -> Result<Fetched> {
+        if let Got::File(t) = self.download_once(app, client, r, folder, ext).await? {
+            return Ok(Fetched::File(t));
+        }
+        let Some(m) = source else { return Ok(Fetched::Gone) };
+        let Ok(key) = <[u8; 32]>::try_from(r.media_key.as_slice()) else { return Ok(Fetched::Gone) };
+        let addr = self.addr_of(m)?;
+        let answer = {
+            let _slot = self.reuploads.acquire().await?;
+            let req = whatsapp_rust::MediaReuploadRequest { target: addr.r()?, media_key: &key };
+            client.media_reupload().request(&req).await
+        };
+        match answer {
+            Ok(whatsapp_rust::MediaRetryResult::Success { direct_path }) => {
+                r.direct_path = direct_path;
+                Ok(match self.download_once(app, client, r, folder, ext).await? {
+                    Got::File(t) => Fetched::File(t),
+                    Got::Refused => Fetched::Gone,
+                })
+            }
+            Ok(other) => {
+                log::info!("the phone couldn't upload the media again: {other:?}");
+                Ok(Fetched::Gone)
+            }
+            Err(whatsapp_rust::MediaReuploadError::Timeout { .. }) => Ok(Fetched::NoAnswer),
+            Err(e) => {
+                log::info!("asking the phone to upload media again failed: {e}");
+                Ok(Fetched::NoAnswer)
+            }
+        }
+    }
+
+    /// Keeps the path the phone gave a message's media, so later downloads use it.
+    fn remember_path(&self, app: &App, m: &Message, mut stored: Stored, path: &str) {
+        stored.direct_path = path.to_string();
+        let _ = app.store.set_media_params(&m.chat, &m.id, &stored);
+    }
+
+    /// Stored messages carrying the sticker with this id, newest first.
+    async fn messages_with_sticker(&self, app: &App, id: &str) -> Vec<Message> {
+        let mut index = self.sticker_index.lock().await;
+        let fresh = index.as_ref().is_some_and(|(at, _)| now_ms() - at < 60_000);
+        if !fresh {
+            let mut map: std::collections::HashMap<String, Vec<Message>> = Default::default();
+            for m in app.store.sticker_messages(5000) {
+                let Some(st) = app.store.media_params::<Stored>(&m.chat, &m.id).and_then(|s| s.message()).and_then(|raw| convert::sticker_of_message(&raw))
+                else {
+                    continue;
+                };
+                map.entry(st.id).or_default().push(m);
+            }
+            *index = Some((now_ms(), Arc::new(map)));
+        }
+        index.as_ref().and_then(|(_, map)| map.get(id).cloned()).unwrap_or_default()
+    }
+}
+
 impl Inner {
     /// Uploads (if needed), builds and sends one of our own messages under its local id.
     pub(crate) async fn send(&self, app: &Arc<App>, client: &Arc<Client>, m: &Message) -> Result<()> {
@@ -305,15 +476,20 @@ impl Inner {
                     c => crate::media::ext_for(&c.media().map(|m| m.mime.clone()).unwrap_or_default(), ""),
                 };
                 let folder = if matches!(target.content, Content::Sticker { .. }) { "s" } else { "m" };
-                let (token, path) = app.media.fresh(folder, &ext)?;
-                let file = std::fs::File::create(&path)?;
-                let d = downloadable(&raw).ok_or_else(|| anyhow!("nothing to download"))?;
-                match client.download_to_writer(d, file, Default::default()).await {
-                    Ok(_) => Ok(json!({ "token": token })),
-                    Err(e) => {
-                        let _ = std::fs::remove_file(&path);
-                        Err(anyhow!("{e}"))
+                let mut r = downloadable(&raw).and_then(MediaRef::of).ok_or_else(|| anyhow!("nothing to download"))?;
+                if !stored.direct_path.is_empty() {
+                    r.direct_path = stored.direct_path.clone();
+                }
+                let before = r.direct_path.clone();
+                match self.fetch(app, client, &mut r, Some(target.as_ref()), folder, &ext).await? {
+                    Fetched::File(token) => {
+                        if r.direct_path != before {
+                            self.remember_path(app, &target, stored, &r.direct_path);
+                        }
+                        Ok(json!({ "token": token }))
                     }
+                    Fetched::Gone => bail!("This file is no longer on WhatsApp's servers or your phone"),
+                    Fetched::NoAnswer => bail!("Your phone needs to be online to fetch this older file"),
                 }
             }
             NetOp::History { chat, oldest } => {
@@ -463,24 +639,37 @@ impl Inner {
 
             // ── sticker library ──
             NetOp::StickerDownload { sticker } => {
-                let r = sticker.remote.as_ref().ok_or_else(|| anyhow!("WhatsApp didn't say where this sticker is stored"))?;
-                let params = err(whatsapp_rust::download::DownloadParams::encrypted(
-                    r.direct_path.clone(),
-                    &convert::unb64(&r.media_key),
-                    &convert::unb64(&sticker.id),
-                    &convert::unb64(&r.file_enc_sha256),
-                    r.file_length,
-                    MediaType::Sticker,
-                ))?;
-                let (token, path) = app.media.fresh("s", "webp")?;
-                let file = std::fs::File::create(&path)?;
-                match client.download_to_writer(&params, file, Default::default()).await {
-                    Ok(_) => Ok(json!({ "token": token })),
-                    Err(e) => {
-                        let _ = std::fs::remove_file(&path);
-                        Err(anyhow!("{e}"))
+                // Library entries keep the path from when the sticker was first
+                // favourited or sent, which has often expired by now.
+                if let Some(remote) = &sticker.remote {
+                    let mut r = MediaRef::of_sticker(&sticker, remote);
+                    if let Fetched::File(token) = self.fetch(app, client, &mut r, None, "s", "webp").await? {
+                        return Ok(json!({ "token": token }));
                     }
                 }
+                // Then a message carrying the same sticker: its path may be newer,
+                // and if not, the phone can upload that message's copy again.
+                let mut unanswered = false;
+                for m in self.messages_with_sticker(app, &sticker.id).await.into_iter().take(3) {
+                    let Ok(stored) = self.stored(app, &m) else { continue };
+                    let Some(mut r) = MediaRef::of_stored(&stored) else { continue };
+                    let before = r.direct_path.clone();
+                    match self.fetch(app, client, &mut r, Some(&m), "s", "webp").await? {
+                        Fetched::File(token) => {
+                            if r.direct_path != before {
+                                self.remember_path(app, &m, stored, &r.direct_path);
+                            }
+                            let mime = sticker.remote.as_ref().map(|x| x.mimetype.as_str()).unwrap_or("image/webp");
+                            return Ok(json!({ "token": token, "remote": r.remote(mime) }));
+                        }
+                        Fetched::Gone => {}
+                        Fetched::NoAnswer => unanswered = true,
+                    }
+                }
+                if unanswered {
+                    bail!("the phone didn't answer");
+                }
+                Ok(json!({ "gone": true }))
             }
             NetOp::StickerFavorite { sticker, on } => {
                 // Stickers made in Ripple and never sent have no server copy; they stay local.
@@ -498,15 +687,17 @@ impl Inner {
                 Ok(Value::Null)
             }
             NetOp::StickerInfo { target } => {
-                let found = self
-                    .stored(app, &target)
-                    .ok()
-                    .and_then(|s| s.message())
-                    .and_then(|m| convert::sticker_of_message(&m));
-                Ok(match found {
-                    Some(s) => json!({ "id": s.id, "remote": s.remote }),
-                    None => Value::Null,
-                })
+                let Some(raw) = self.stored(app, &target).ok().and_then(|s| s.message()) else { return Ok(Value::Null) };
+                let Some(found) = convert::sticker_of_message(&raw) else { return Ok(Value::Null) };
+                let x = raw.get_base_message().sticker_message.as_option();
+                Ok(json!({
+                    "id": found.id,
+                    "remote": found.remote,
+                    "label": x.and_then(|x| x.accessibility_label.clone()),
+                    "emojis": x.and_then(|x| x.emojis.clone()),
+                    "ai": x.and_then(|x| x.is_ai_sticker).unwrap_or(false),
+                    "avatar": x.and_then(|x| x.is_avatar).unwrap_or(false),
+                }))
             }
 
             NetOp::Group(op) => self.group_op(app, client, op).await,

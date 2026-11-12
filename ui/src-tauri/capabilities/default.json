@@ -11,6 +11,7 @@
     "core:window:allow-set-focus",
     "dialog:allow-save",
     "opener:allow-open-url",
+    "opener:allow-default-urls",
     "notification:default"
   ]
 }

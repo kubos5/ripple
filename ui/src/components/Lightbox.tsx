@@ -12,7 +12,6 @@ import { Icon, IconButton } from "./ui";
 const isViewable = (m: Message) => (m.content.type === "image" || m.content.type === "video") && m.content.media.state === "ready";
 
 export function Lightbox() {
-  const [closing, setClosing] = createSignal(false);
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
   const [dragging, setDragging] = createSignal(false);
@@ -22,17 +21,13 @@ export function Lightbox() {
   const index = () => items().findIndex((m) => m.id === state.lightbox?.id);
   const media = () => current()?.content as ContentOf<"image"> | ContentOf<"video"> | undefined;
 
-  const close = () => {
-    if (closing()) return;
-    setClosing(true);
-    setTimeout(() => setState("lightbox", null), 110);
-  };
+  const close = () => setState("lightbox", null);
   const step = (d: number) => {
     const next = items()[index() + d];
     if (next && state.lightbox) setState("lightbox", { chat: state.lightbox.chat, id: next.id });
   };
   createEffect(on(() => state.lightbox?.id, () => { setZoom(1); setPan({ x: 0, y: 0 }); }));
-  createEffect(() => { if (state.lightbox && !current() && !closing()) close(); });
+  createEffect(() => { if (state.lightbox && !current()) close(); });
 
   const onKey = (e: KeyboardEvent) => {
     if (state.modal) return;
@@ -72,7 +67,7 @@ export function Lightbox() {
   return (
     <Show when={current()}>
       {(m) => (
-        <div class={`lightbox ${closing() ? "closing" : ""}`} onContextMenu={(e) => e.preventDefault()}>
+        <div class="lightbox" onContextMenu={(e) => e.preventDefault()}>
           <div class="lb-top drag">
             <div class="grow">
               <div class="name truncate">{contactName(m().sender)}</div>
@@ -88,24 +83,27 @@ export function Lightbox() {
             </Show>
             <IconButton class="no-drag" icon="x" tip="Close" onClick={close} />
           </div>
-          <div class="lb-stage" onMouseDown={(e) => e.target === e.currentTarget && close()} onWheel={onWheel}>
+          <div class="lb-stage" onWheel={onWheel}>
             <Show when={index() > 0}><button class="lb-nav prev" aria-label="Previous" onClick={() => step(-1)}><Icon name="caret-left" /></button></Show>
             <Show when={index() < items().length - 1}><button class="lb-nav next" aria-label="Next" onClick={() => step(1)}><Icon name="caret-right" /></button></Show>
-            <Show when={media()} keyed>
-              {(c) => (
-                <Show when={c.type === "image"} fallback={<video src={mediaUrl(c.media.token)} controls autoplay loop={c.type === "video" && c.gif} />}>
-                  <img
-                    src={mediaUrl(c.media.token)}
-                    alt=""
-                    draggable={false}
-                    class={`${zoom() > 1 ? "zoomed" : ""} ${dragging() ? "zooming" : ""}`}
-                    style={{ transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})`, animation: "pop-in var(--t-slow) var(--spring)" }}
-                    onPointerDown={onDown}
-                    onClick={() => { if (zoom() === 1) setZoom(2); }}
-                  />
-                </Show>
-              )}
-            </Show>
+            {/* The media is fitted inside this box (never cropped); clicking around it closes. */}
+            <div class="lb-fit" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+              <Show when={media()} keyed>
+                {(c) => (
+                  <Show when={c.type === "image"} fallback={<video src={mediaUrl(c.media.token)} controls autoplay loop={c.type === "video" && c.gif} />}>
+                    <img
+                      src={mediaUrl(c.media.token)}
+                      alt=""
+                      draggable={false}
+                      class={`${zoom() > 1 ? "zoomed" : ""} ${dragging() ? "zooming" : ""}`}
+                      style={{ transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})` }}
+                      onPointerDown={onDown}
+                      onClick={() => { if (zoom() === 1) setZoom(2); }}
+                    />
+                  </Show>
+                )}
+              </Show>
+            </div>
           </div>
           <Show when={media()?.caption}>
             <div class="lb-caption"><RichText text={media()!.caption} mentions={m().mentions} /></div>

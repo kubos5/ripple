@@ -756,6 +756,7 @@ pub fn seed(app: &Arc<App>) {
             favorite,
             used,
             remote: None,
+            missing: false,
         });
     };
     for (i, token) in [st0, st1, st2, st3].into_iter().enumerate() {
@@ -764,6 +765,15 @@ pub fn seed(app: &Arc<App>) {
     if let Ok(token) = app.media.write("s", "webp", include_bytes!("assets/wave.webp")) {
         library(token, now - 5 * 60_000, false, true);
     }
+    // A favourite whose file WhatsApp no longer has, as old favourites often are.
+    let _ = app.store.put_sticker(&Sticker {
+        id: file_hash(b"ripple demo: expired sticker"),
+        width: 512,
+        height: 512,
+        favorite: true,
+        missing: true,
+        ..Default::default()
+    });
 
     if std::env::var("RIPPLE_DEMO_STRESS").is_ok() {
         stress(app, now);

@@ -257,7 +257,8 @@ export function Composer(props: { chat: Chat }) {
     focus();
   };
 
-  const attach = (e: MouseEvent) =>
+  const attach = (e: MouseEvent) => {
+    setPicker(null);
     openMenu(e.currentTarget as HTMLElement, [
       { label: "Photos & videos", icon: "images", run: async () => { const files = await pickFiles("image/*,video/*"); if (files.length) openModal("attach", { files }); } },
       { label: "Document", icon: "file-text", run: async () => { const files = await pickFiles("*/*"); if (files.length) openModal("attach", { files, asDocument: true }); } },
@@ -267,7 +268,14 @@ export function Composer(props: { chat: Chat }) {
       { label: "Event", icon: "calendar-blank", run: () => openModal("event") },
       { label: "Contact", icon: "user", run: () => openModal("shareContact") },
       { label: "Location", icon: "map-pin", run: () => openModal("location") },
-    ]);
+    ], {
+      // Above the message box, where the emoji picker opens, rather than over it.
+      place: (_w, h) => {
+        const r = root.getBoundingClientRect();
+        return { left: r.left + 16, top: r.top + 2 - h };
+      },
+    });
+  };
 
   // ── voice recording ──
   const startRec = async () => {

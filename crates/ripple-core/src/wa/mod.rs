@@ -60,7 +60,18 @@ pub(crate) struct Inner {
     first_sync: AtomicBool,
     last_history: AtomicI64,
     avatars_busy: AtomicBool,
+    /// Caps simultaneous media downloads. Opening the sticker picker on a large
+    /// library would otherwise start hundreds at once and run out of file handles.
+    downloads: tokio::sync::Semaphore,
+    /// Caps requests asking the phone to upload expired media again.
+    reuploads: tokio::sync::Semaphore,
+    /// Sticker messages by sticker id, rebuilt at most once a minute. Used to
+    /// find a newer copy of a library sticker whose own path has expired.
+    sticker_index: tokio::sync::Mutex<Option<(i64, Arc<StickerIndex>)>>,
 }
+
+/// Sticker id → the stored messages carrying that sticker, newest first.
+pub(crate) type StickerIndex = HashMap<String, Vec<Message>>;
 
 pub(crate) struct Addr {
     chat: WaJid,
@@ -99,6 +110,9 @@ impl LiveNet {
                 first_sync: AtomicBool::new(false),
                 last_history: AtomicI64::new(0),
                 avatars_busy: AtomicBool::new(false),
+                downloads: tokio::sync::Semaphore::new(4),
+                reuploads: tokio::sync::Semaphore::new(4),
+                sticker_index: tokio::sync::Mutex::new(None),
             }),
         }
     }

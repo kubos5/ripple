@@ -286,14 +286,21 @@ impl Inner {
                 }
                 let remote = convert::sticker_of_action(a);
                 let (w, h) = (a.width.unwrap_or(512), a.height.unwrap_or(512));
+                let old = app.store.sticker(&u.filehash);
                 app.ingest_sticker(&u.filehash, |s| {
                     s.favorite = on;
                     s.width = w;
                     s.height = h;
-                    if remote.is_some() {
-                        s.remote = remote;
+                    if s.remote.is_none() {
+                        s.remote = remote.clone();
                     }
                 });
+                // A different copy may download where the stored one didn't.
+                if let (Some(r), Some(old)) = (remote, old)
+                    && old.remote.as_ref() != Some(&r)
+                {
+                    app.sticker_seen(&u.filehash, r);
+                }
             }
             Event::RemoveRecentStickerUpdate(u) => {
                 app.sticker_unrecent(&u.filehash, u.action.last_sticker_sent_ts.map(convert::ms));
@@ -595,10 +602,12 @@ impl Inner {
             Special::None => {}
         }
         let Some(content) = parsed.content else { return };
-        if i.from_me
-            && let Some(st) = convert::sticker_of_message(msg)
-        {
-            app.sticker_sent(&st.id, ts, st.remote, st.animated);
+        if let Some(st) = convert::sticker_of_message(msg) {
+            if i.from_me {
+                app.sticker_sent(&st.id, ts, st.remote, st.animated);
+            } else if let Some(remote) = st.remote {
+                app.sticker_seen(&st.id, remote);
+            }
         }
         let mut m = blank(i.id.clone(), chat.to_string(), sender.to_string(), i.from_me, ts, content);
         m.quote = parsed.quote.map(|mut q| {

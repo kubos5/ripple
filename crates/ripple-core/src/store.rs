@@ -659,6 +659,17 @@ impl Store {
             .unwrap_or_default()
     }
 
+    /// Sticker messages from anyone, newest first.
+    pub fn sticker_messages(&self, limit: usize) -> Vec<Message> {
+        let db = self.db();
+        let Ok(mut st) = db.prepare_cached("SELECT seq,data FROM messages WHERE kind='sticker' ORDER BY ts DESC LIMIT ?1") else {
+            return vec![];
+        };
+        st.query_map([limit as i64], Self::read_msg)
+            .map(|rows| rows.flatten().flatten().collect())
+            .unwrap_or_default()
+    }
+
     pub fn sticker(&self, id: &str) -> Option<Sticker> {
         self.read_stickers("SELECT id,data,favorite,used FROM stickers WHERE id=?1", &[&id]).pop()
     }

@@ -96,18 +96,14 @@ interface OpenMenu {
   class?: string;
   /** The control that opened the menu; clicking it again closes the menu. */
   anchor?: HTMLElement | null;
+  /** Custom placement from the menu's measured size (still kept inside the window). */
+  place?: (width: number, height: number) => { left: number; top: number };
 }
 
 const [menu, setMenu] = createSignal<OpenMenu | null>(null);
-const [menuClosing, setMenuClosing] = createSignal(false);
 
 export function closeMenu() {
-  if (!menu() || menuClosing()) return;
-  setMenuClosing(true);
-  setTimeout(() => {
-    setMenu(null);
-    setMenuClosing(false);
-  }, 90);
+  setMenu(null);
 }
 
 /** Opens a context menu at a pointer event or anchored under an element. */
@@ -115,7 +111,7 @@ export function openMenu(at: MouseEvent | HTMLElement, items: MenuEntry[], opts:
   const anchor =
     at instanceof HTMLElement ? at : at.type === "click" && at.currentTarget instanceof HTMLElement ? at.currentTarget : null;
   const open = menu();
-  if (anchor && open && !menuClosing() && open.anchor === anchor) {
+  if (anchor && open && open.anchor === anchor) {
     if (!(at instanceof HTMLElement)) at.preventDefault();
     closeMenu();
     return;
@@ -130,13 +126,12 @@ export function openMenu(at: MouseEvent | HTMLElement, items: MenuEntry[], opts:
     x = at.clientX;
     y = at.clientY;
   }
-  setMenuClosing(false);
   setMenu({ x, y, items: items.filter((i) => !i.hidden), anchor, ...opts });
 }
 
 export function MenuHost() {
   let el: HTMLDivElement | undefined;
-  const [pos, setPos] = createSignal({ left: 0, top: 0, ox: "left", oy: "top" });
+  const [pos, setPos] = createSignal({ left: 0, top: 0 });
 
   createEffect(() => {
     const m = menu();
@@ -145,15 +140,15 @@ export function MenuHost() {
     const w = el.offsetWidth, h = el.offsetHeight, pad = 8;
     let left = m.align === "right" ? m.x - w : m.x;
     let top = m.y;
-    let ox = m.align === "right" ? "right" : "left", oy = "top";
-    if (left + w > innerWidth - pad) {
+    if (m.place) ({ left, top } = m.place(w, h));
+    else if (left + w > innerWidth - pad) {
       // Anchored menus slide back into view; pointer menus flip to the other side of the cursor.
       left = m.align ? Math.max(pad, innerWidth - pad - w) : Math.max(pad, m.x - w);
-      ox = "right";
     }
     if (left < pad) left = pad;
-    if (top + h > innerHeight - pad) { top = Math.max(pad, m.y - h - (m.align ? 44 : 0)); oy = "bottom"; }
-    setPos({ left, top, ox, oy });
+    if (!m.place && top + h > innerHeight - pad) top = Math.max(pad, m.y - h - (m.align ? 44 : 0));
+    top = Math.max(pad, top);
+    setPos({ left, top });
   });
 
   const onKey = (e: KeyboardEvent) => {
@@ -190,9 +185,9 @@ export function MenuHost() {
         <Portal>
           <div
             ref={el}
-            class={`menu ${menuClosing() ? "closing" : ""} ${m().class ?? ""}`}
+            class={`menu ${m().class ?? ""}`}
             role="menu"
-            style={{ left: `${pos().left}px`, top: `${pos().top}px`, "--ox": pos().oy, "--oy": pos().ox }}
+            style={{ left: `${pos().left}px`, top: `${pos().top}px` }}
             onContextMenu={(e) => e.preventDefault()}
           >
             <Show when={m().render} fallback={
@@ -240,12 +235,7 @@ export function Sheet(props: {
   flush?: boolean;
   class?: string;
 }) {
-  const [closing, setClosing] = createSignal(false);
-  const close = () => {
-    if (closing()) return;
-    setClosing(true);
-    setTimeout(() => (props.onClose ?? closeModal)(), 110);
-  };
+  const close = () => (props.onClose ?? closeModal)();
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
@@ -256,7 +246,7 @@ export function Sheet(props: {
   onCleanup(() => window.removeEventListener("keydown", onKey));
   return (
     <Portal>
-      <div class={`scrim ${closing() ? "closing" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div class="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
         <div class={`sheet ${props.size ?? ""} ${props.class ?? ""}`} role="dialog" aria-modal="true" aria-label={props.title}>
           <Show when={props.title || props.head}>
             <div class="sheet-head">

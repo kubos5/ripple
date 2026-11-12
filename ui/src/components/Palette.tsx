@@ -25,18 +25,13 @@ interface Entry {
 export function Palette() {
   const [q, setQ] = createSignal("");
   const [active, setActive] = createSignal(0);
-  const [closing, setClosing] = createSignal(false);
   const [term, setTerm] = createSignal("");
   const push = debounce((v: string) => setTerm(v), 140);
   createEffect(() => push(q()));
   const [hits] = createResource(term, (t) => (t.trim().length >= 2 ? call<Message[]>("search", { query: t }).catch(() => []) : []));
   let listEl: HTMLDivElement | undefined;
 
-  const close = () => {
-    if (closing()) return;
-    setClosing(true);
-    setTimeout(closeModal, 100);
-  };
+  const close = () => closeModal();
   const go = (fn: () => void) => () => { closeModal(); fn(); };
 
   const actions = (): Entry[] => {
@@ -118,7 +113,7 @@ export function Palette() {
 
   return (
     <Portal>
-      <div class={`scrim palette-scrim ${closing() ? "closing" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div class="scrim palette-scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
         <div class="palette" role="dialog" aria-label="Command palette">
           <div class="palette-input">
             <Icon name="magnifying-glass" />

@@ -97,11 +97,9 @@ export function EmojiPicker(props: { onPick: (emoji: string) => void; autofocus?
   const skinMenu = (e: MouseEvent) => {
     e.stopPropagation();
     const variants = ["✋", "✋🏻", "✋🏼", "✋🏽", "✋🏾", "✋🏿"];
-    const row = e.currentTarget as HTMLElement;
     const next = (skin() + 1) % variants.length;
     setSkin(next);
     try { localStorage.setItem(SKIN_KEY, String(next)); } catch { /* storage unavailable */ }
-    row.animate([{ transform: "scale(0.7)" }, { transform: "scale(1)" }], { duration: 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
   };
   return (
     <div class="emoji-picker" onMouseLeave={() => setHover(null)}>
@@ -191,9 +189,11 @@ export function StickerPicker(props: { onDone: () => void }) {
   const [list, { mutate, refetch }] = createResource(stickerRev, () => call<Sticker[]>("stickers").catch(() => []));
   const [tab, setTab] = createSignal<"recent" | "fav">("recent");
   // The library comes back most recently used first (`used` is a timestamp).
+  // Favourites that can't be fetched any more stay listed so they can be removed;
+  // recents like that are simply left out.
   const shown = () => {
     const all = list() ?? [];
-    return tab() === "fav" ? all.filter((s) => s.favorite) : all.filter((s) => s.used > 0).slice(0, RECENT_STICKERS);
+    return tab() === "fav" ? all.filter((s) => s.favorite) : all.filter((s) => s.used > 0 && !s.missing).slice(0, RECENT_STICKERS);
   };
   const create = async () => {
     const [file] = await pickFiles("image/png,image/jpeg,image/webp", false);
@@ -232,7 +232,17 @@ export function StickerPicker(props: { onDone: () => void }) {
           <div class="sticker-grid">
             <For each={shown()}>
               {(s) => (
-                <Show when={s.token} fallback={<span class="st-skel" title="Downloading…" onContextMenu={(e) => menu(e, s)} />}>
+                <Show when={s.token} fallback={
+                  <Show when={s.missing} fallback={<span class="st-skel" title="Downloading…" onContextMenu={(e) => menu(e, s)} />}>
+                    <span
+                      class="st-skel st-gone"
+                      title="WhatsApp no longer has this sticker's file. It comes back if someone sends it again."
+                      onContextMenu={(e) => menu(e, s)}
+                    >
+                      <Icon name="sticker" />
+                    </span>
+                  </Show>
+                }>
                   {(token) => (
                     <button
                       onContextMenu={(e) => menu(e, s)}

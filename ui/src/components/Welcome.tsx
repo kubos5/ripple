@@ -91,7 +91,7 @@ function Pairing(props: { qr: string | null; code: string | null; expires: numbe
                 {(ch, i) => (
                   <>
                     <Show when={i() === 4}><span class="dash">–</span></Show>
-                    <span style={{ "--i": i() }}>{ch}</span>
+                    <span>{ch}</span>
                   </>
                 )}
               </For>
@@ -113,7 +113,10 @@ export function Welcome() {
   return (
     <div class="welcome">
       <div class="welcome-art drag">
-        <div class="rings"><i /><i /><i /><i /><b /></div>
+        <svg class="rings" viewBox="-380 -380 760 760" aria-hidden="true">
+          <circle r="379" /><circle r="379" /><circle r="379" /><circle r="379" />
+        </svg>
+        <b class="core" />
         <h1 class="display">ripple</h1>
         <p>A fast, quiet desktop home for your WhatsApp conversations.</p>
       </div>

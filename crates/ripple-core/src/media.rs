@@ -207,9 +207,56 @@ pub fn is_animated_webp(bytes: &[u8]) -> bool {
     bytes.len() > 32 && &bytes[0..4] == b"RIFF" && bytes[..bytes.len().min(256)].windows(4).any(|w| w == b"ANIM")
 }
 
+/// Pack details WhatsApp sticker makers embed in the file (a JSON object in the WebP's EXIF data).
+#[derive(Debug, Default, PartialEq, serde::Serialize)]
+pub struct PackInfo {
+    pub pack: Option<String>,
+    pub publisher: Option<String>,
+    pub emojis: Vec<String>,
+}
+
+pub fn sticker_pack_info(bytes: &[u8]) -> Option<PackInfo> {
+    let key = b"\"sticker-pack-";
+    let at = bytes.windows(key.len()).position(|w| w == key)?;
+    let start = bytes[..at].iter().rposition(|&b| b == b'{')?;
+    // The object is flat apart from the emoji list, so the first closing brace ends it.
+    let end = start + bytes[start..].iter().position(|&b| b == b'}')?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes[start..=end]).ok()?;
+    let text = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    let emojis = v
+        .get("emojis")
+        .and_then(|e| e.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str()).filter(|s| !s.is_empty()).map(String::from).collect())
+        .unwrap_or_default();
+    let info = PackInfo { pack: text("sticker-pack-name"), publisher: text("sticker-pack-publisher"), emojis };
+    (info != PackInfo::default()).then_some(info)
+}
+
+/// Writes a sticker file as a PNG (first frame for animated ones).
+pub fn sticker_to_png(bytes: &[u8], to: &Path) -> Result<()> {
+    let img = image::load_from_memory_with_format(bytes, ImageFormat::WebP).context("read sticker")?;
+    img.save_with_format(to, ImageFormat::Png).context("write PNG")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sticker_pack_metadata() {
+        // WebP container with an EXIF chunk carrying the pack JSON, as sticker makers write it.
+        let json = r#"{"sticker-pack-id":"abc","sticker-pack-name":"Morning Cats","sticker-pack-publisher":"Ana","emojis":["☕","😺"]}"#.as_bytes();
+        let mut file = b"RIFF\0\0\0\0WEBPVP8X\x0a\0\0\0".to_vec();
+        file.extend_from_slice(&[0; 10]);
+        file.extend_from_slice(b"EXIF\0\0\0\0II*\0\x08\0\0\0\x01\0\x41\x57\x07\0");
+        file.extend_from_slice(json);
+        let info = sticker_pack_info(&file).unwrap();
+        assert_eq!(info.pack.as_deref(), Some("Morning Cats"));
+        assert_eq!(info.publisher.as_deref(), Some("Ana"));
+        assert_eq!(info.emojis, vec!["☕".to_string(), "😺".to_string()]);
+        assert!(sticker_pack_info(b"RIFF....WEBPVP8 plain sticker").is_none());
+    }
 
     #[test]
     fn tokens_cannot_escape() {

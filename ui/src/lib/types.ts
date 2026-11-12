@@ -197,7 +197,6 @@ export interface Settings {
   closeToTray: boolean;
   autostart: boolean;
   spellcheck: boolean;
-  reduceMotion: "system" | "on" | "off";
   sidebarWidth: number;
   quickReactions: string[];
 }
@@ -223,6 +222,8 @@ export interface Sticker {
   favorite: boolean;
   used: number;
   remote: unknown | null;
+  /** WhatsApp no longer has the file and the phone couldn't upload it again. */
+  missing: boolean;
 }
 
 export interface Cursor {

@@ -394,11 +394,19 @@ pub struct Stored {
     /// The sender's address exactly as it arrived (poll and event keys depend on it).
     #[serde(default)]
     pub sender: String,
+    /// A newer CDN path for the media, after the phone uploaded it again.
+    #[serde(default)]
+    pub direct_path: String,
 }
 
 impl Stored {
     pub fn of(msg: &wa::Message, secret: Option<&[u8]>) -> Stored {
-        Stored { raw: b64(&msg.encode_to_vec()), secret: secret.map(b64).unwrap_or_default(), sender: String::new() }
+        Stored {
+            raw: b64(&msg.encode_to_vec()),
+            secret: secret.map(b64).unwrap_or_default(),
+            sender: String::new(),
+            direct_path: String::new(),
+        }
     }
 
     pub fn message(&self) -> Option<wa::Message> {

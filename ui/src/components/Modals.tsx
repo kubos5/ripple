@@ -2,13 +2,13 @@
 
 import { For, type JSX, Match, Show, Switch, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { encode } from "uqr";
-import { call } from "../lib/ipc";
+import { call, inTauri, mediaUrl } from "../lib/ipc";
 import { ephemeralLabel, fileSize, fullStamp, isGroupJid, phone, plural } from "../lib/format";
 import {
   act, chatName, clearSelection, closeChat, closeModal, contactName, derived, isAdmin, openChat, openModal, send,
   setState, startChat, state, toast,
 } from "../lib/state";
-import type { Attachment, Group, Jid, Message, Receipt } from "../lib/types";
+import type { Attachment, ContentOf, Group, Jid, Message, Receipt } from "../lib/types";
 import { Palette } from "./Palette";
 import { fileToAttachment } from "./Pickers";
 import { Settings } from "./Settings";
@@ -419,6 +419,107 @@ function Forward() {
 }
 
 // ───────────────────────────── message details ─────────────────────────────
+
+interface StickerFacts {
+  id: string | null;
+  favorite: boolean;
+  animated: boolean;
+  width: number;
+  height: number;
+  size: number | null;
+  label: string | null;
+  emojis: string[];
+  pack: string | null;
+  publisher: string | null;
+  ai: boolean;
+  avatar: boolean;
+}
+
+/** A sticker from a message: large preview, what it is, and what can be done with it. */
+function StickerDetails() {
+  const chat = prop<Jid>("chat");
+  const id = prop<string>("id");
+  const msg = useMessage();
+  const [facts, { mutate }] = createResource(() => call<StickerFacts>("stickerDetails", { chat, id }).catch(() => null));
+  const sticker = () => {
+    const c = msg()?.content;
+    return c?.type === "sticker" ? (c as ContentOf<"sticker">) : undefined;
+  };
+  const ready = () => sticker()?.media.state === "ready";
+  const toggleFavourite = async () => {
+    const f = facts();
+    if (!f) return;
+    const on = !f.favorite;
+    // A sticker that isn't in the library yet is copied in from the message.
+    const res = on && !f.id ? await act("stickerFromMessage", { chat, id }) : await act("stickerFavorite", { id: f.id ?? "", on });
+    if (res === undefined) return;
+    mutate({ ...f, favorite: on });
+    toast(on ? "Added to favourites" : "Removed from favourites", "success");
+  };
+  const save = async () => {
+    const f = facts();
+    const ext = f?.animated ? "webp" : "png";
+    const name = `${(f?.pack ?? "sticker").replace(/[\\/:*?"<>|]+/g, " ").trim() || "sticker"}.${ext}`;
+    if (inTauri) {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const to = await save({ defaultPath: name, filters: [{ name: f?.animated ? "Animated WebP" : "PNG image", extensions: [ext] }] });
+      if (to && (await act("stickerSave", { chat, id, to })) !== undefined) toast("Saved", "success");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = mediaUrl(sticker()?.media.token);
+    a.download = name.replace(/\.png$/, ".webp");
+    a.click();
+  };
+  const details = () => {
+    const f = facts();
+    const s = sticker();
+    if (!s) return [];
+    const kind = [f?.ai ? "AI sticker" : f?.avatar ? "Avatar sticker" : s.animated ? "Animated sticker" : "Sticker"];
+    if (s.width && s.height) kind.push(`${s.width} × ${s.height}`);
+    if (f?.size) kind.push(fileSize(f.size));
+    return kind;
+  };
+  return (
+    <Sheet
+      title="Sticker"
+      foot={
+        <>
+          <button class="btn ghost" disabled={!ready()} onClick={() => void save()}><Icon name="download-simple" />Save as image</button>
+          <button class={`btn ${facts()?.favorite ? "" : "primary"}`} disabled={!ready() || !facts()} onClick={() => void toggleFavourite()}>
+            <Icon name={facts()?.favorite ? "heart-fill" : "heart"} />
+            {facts()?.favorite ? "Remove from favourites" : "Add to favourites"}
+          </button>
+        </>
+      }
+    >
+      <Show when={msg()}>
+        {(m) => (
+          <div class="sticker-sheet">
+            <div class="st-stage">
+              <Show when={ready()} fallback={<div class="spinner" />}>
+                <img src={mediaUrl(sticker()?.media.token)} alt={facts()?.label ?? "Sticker"} draggable={false} />
+              </Show>
+            </div>
+            <Show when={facts()?.label || facts()?.emojis.length}>
+              <p class="st-label">
+                <Show when={facts()?.emojis.length}><span class="st-emoji">{facts()!.emojis.slice(0, 6).join(" ")}</span></Show>
+                {facts()?.label}
+              </p>
+            </Show>
+            <div class="card st-facts">
+              <Show when={facts()?.pack}>
+                <div class="set-row"><Icon name="sticker" /><div class="grow"><div class="s-title">{facts()!.pack}</div><div class="s-sub">{facts()?.publisher ? `Pack by ${facts()!.publisher}` : "Sticker pack"}</div></div></div>
+              </Show>
+              <div class="set-row"><Icon name={m().fromMe ? "paper-plane-right" : "user"} /><div class="grow"><div class="s-title">{m().fromMe ? "Sent by you" : `From ${contactName(m().sender)}`}</div><div class="s-sub">{fullStamp(m().ts)}</div></div></div>
+              <div class="set-row"><Icon name="info" /><div class="grow"><div class="s-title">{details()[0]}</div><div class="s-sub">{details().slice(1).join(" · ")}</div></div></div>
+            </div>
+          </div>
+        )}
+      </Show>
+    </Sheet>
+  );
+}
 
 function MessageInfo() {
   const chat = prop<Jid>("chat");
@@ -981,6 +1082,7 @@ export function ModalHost(): JSX.Element {
           <Match when={type() === "delete"}><DeleteMessages /></Match>
           <Match when={type() === "forward"}><Forward /></Match>
           <Match when={type() === "messageInfo"}><MessageInfo /></Match>
+          <Match when={type() === "sticker"}><StickerDetails /></Match>
           <Match when={type() === "reactions"}><ReactionList /></Match>
           <Match when={type() === "pollVotes"}><PollVotes /></Match>
           <Match when={type() === "attach"}><Attach /></Match>

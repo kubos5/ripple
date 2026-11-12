@@ -430,6 +430,8 @@ impl Network for DemoNet {
             }
             NetOp::DemoTrigger { what } => self.trigger(&app, &what).await,
             NetOp::Pair { .. } => bail!("Leave the demo to link a real account"),
+            // What WhatsApp attaches to a sticker message, so the details view has something to show.
+            NetOp::StickerInfo { .. } => Ok(json!({ "label": "A friendly cartoon sticker", "emojis": "😊" })),
             NetOp::Vote { .. } | NetOp::Rsvp { .. } | NetOp::Block { .. } | NetOp::Ephemeral { .. } => {
                 sleep(ms(150)).await;
                 Ok(Value::Null)
@@ -676,6 +678,50 @@ mod tests {
             noisy |= matches!(ev, UiEvent::Notify { .. });
         }
         assert!(!noisy);
+
+        // Notifications name the sender from the contact book, even for a chat
+        // that was created while only the number was known.
+        let stranger = "15550100777@s.whatsapp.net";
+        app.ensure_chat(stranger);
+        assert_eq!(app.chat(stranger).unwrap().name, phone_of(stranger));
+        app.store.upsert_contact(stranger, |c| c.name = Some("Rosa Lind".into()));
+        let mut events = r.subscribe();
+        app.ingest_message(incoming(stranger, stranger, text("Hello!")), true);
+        let mut title = None;
+        while let Ok(ev) = events.try_recv() {
+            if let UiEvent::Notify { title: t, .. } = ev {
+                title = Some(t);
+            }
+        }
+        assert_eq!(title.as_deref(), Some("Rosa Lind"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sticker_details_and_save() {
+        unsafe { std::env::set_var("RIPPLE_DEMO_QUIET", "1") };
+        let dir = temp();
+        let r = Ripple::open(dir.clone(), true).await.unwrap();
+        let app = r.app();
+        let m = app
+            .store
+            .sticker_messages(50)
+            .into_iter()
+            .find(|m| m.content.media().is_some_and(|x| x.state == MediaState::Ready))
+            .expect("the demo has a downloaded sticker");
+        let facts = call(&r, json!({ "cmd": "stickerDetails", "chat": m.chat, "id": m.id })).await;
+        assert!(facts["id"].is_string() && facts["size"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(facts["label"], "A friendly cartoon sticker");
+        assert_eq!(facts["emojis"], json!(["😊"]));
+
+        let png = dir.join("saved.png");
+        call(&r, json!({ "cmd": "stickerSave", "chat": m.chat, "id": m.id, "to": png.to_string_lossy() })).await;
+        let bytes = std::fs::read(&png).unwrap();
+        assert_eq!(&bytes[1..4], b"PNG");
+
+        // The library still lists a favourite whose file is gone, flagged so the picker can say so.
+        let list: Vec<Sticker> = serde_json::from_value(call(&r, json!({ "cmd": "stickers" })).await).unwrap();
+        assert!(list.iter().any(|s| s.favorite && s.missing && s.token.is_none()));
         std::fs::remove_dir_all(dir).ok();
     }
 }

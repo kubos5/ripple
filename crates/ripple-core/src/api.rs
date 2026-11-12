@@ -228,6 +228,10 @@ pub enum Request {
     StickerCreate { file: Attachment },
     /// Adds the sticker in a received message to favourites.
     StickerFromMessage { chat: Jid, id: String },
+    /// What is known about the sticker in a message: library state, pack, labels, size.
+    StickerDetails { chat: Jid, id: String },
+    /// Saves the sticker in a message as an image file (PNG unless it is animated).
+    StickerSave { chat: Jid, id: String, to: String },
 
     // voice notes
     RecordStart,

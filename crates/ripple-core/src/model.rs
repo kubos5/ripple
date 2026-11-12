@@ -646,8 +646,6 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub autostart: bool,
     pub spellcheck: bool,
-    /// `system`, `on` (always reduce) or `off`.
-    pub reduce_motion: String,
     pub sidebar_width: u32,
     /// Quick-reaction emoji shown on hover.
     pub quick_reactions: Vec<String>,
@@ -674,7 +672,6 @@ impl Default for Settings {
             close_to_tray: true,
             autostart: false,
             spellcheck: true,
-            reduce_motion: "system".into(),
             sidebar_width: 348,
             quick_reactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"].map(String::from).to_vec(),
         }
@@ -746,6 +743,9 @@ pub struct Sticker {
     pub used: i64,
     /// Where WhatsApp keeps the file, for downloading and for syncing favourites.
     pub remote: Option<RemoteSticker>,
+    /// WhatsApp no longer has the file and the phone couldn't upload it again.
+    /// Cleared when a fresh copy turns up (the sticker is sent or favourited again).
+    pub missing: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]

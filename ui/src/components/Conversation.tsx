@@ -37,9 +37,7 @@ function Subtitle(props: { chat: Chat }) {
   });
   return (
     <div class="sub truncate">
-      <Show when={text().t} keyed>
-        {(t) => <span class={`truncate ${text().live ? "live" : ""}`}>{t}</span>}
-      </Show>
+      <span class={`truncate ${text().live ? "live" : ""}`}>{text().t}</span>
     </div>
   );
 }
@@ -151,12 +149,16 @@ const isVisual = (m: Message) => !m.viewOnce && (m.content.type === "image" || (
 
 function MessageList(props: { chat: Chat }) {
   let scroller!: HTMLDivElement;
+  let tail!: HTMLDivElement;
   let handle: VirtualizerHandle | undefined;
   const cache = new Map<string, Item>();
   const [shift, setShift] = createSignal(false);
   const [atBottom, setAtBottom] = createSignal(true);
   const [below, setBelow] = createSignal(0);
-  let pinned = true; // non-reactive mirror of atBottom for scroll handlers
+  // Whether the view follows new content. Only the user scrolling up turns it
+  // off; content growing below the view never does.
+  let pinned = true;
+  let lastTop = 0;
 
   const layout = createMemo(() => {
     const msgs = state.convo.messages;
@@ -217,14 +219,21 @@ function MessageList(props: { chat: Chat }) {
     return { items, flags, albums };
   });
 
-  // Instant on purpose: the new bubble's own entrance supplies the motion, and
-  // smooth-scrolling a virtualised list can briefly show unrendered rows.
-  const toBottom = () => {
-    const n = layout().items.length;
-    if (!handle || !n) return;
-    handle.scrollToIndex(n - 1, { align: "end" });
-    scroller.scrollTop = scroller.scrollHeight;
+  // Staying at the bottom. Everything is instant: smooth scrolling a virtualised
+  // list can show rows before they are measured. `stick` runs from size
+  // observers, which fire after layout but before paint, so a new message,
+  // the typing bubble or a late-loading image never shows a frame that is
+  // short of the bottom.
+  const stick = () => {
+    if (pinned) scroller.scrollTop = scroller.scrollHeight;
   };
+  // Rows are measured in the list's own size observer; the scroll height is
+  // final once that callback returns, so follow it in a microtask.
+  const onListResize = () => queueMicrotask(stick);
+  // Not `scrollToIndex`: it lines up the last row rather than the true bottom
+  // (leaving the padding under it out of view) and re-applies itself later,
+  // undoing any correction.
+  const toBottom = stick;
 
   onMount(() => {
     // First paint: land on the unread divider if there is one, otherwise the newest message.
@@ -238,9 +247,11 @@ function MessageList(props: { chat: Chat }) {
     };
     start();
     requestAnimationFrame(start);
-    // Keep the view glued to the bottom while late content (images) changes height.
-    const ro = new ResizeObserver(() => { if (pinned) scroller.scrollTop = scroller.scrollHeight; });
-    if (scroller.firstElementChild) ro.observe(scroller.firstElementChild);
+    // The viewport (composer growing, reply bar, window size) and the content
+    // after the list (typing bubble) also move the bottom.
+    const ro = new ResizeObserver(stick);
+    ro.observe(scroller);
+    ro.observe(tail);
     onCleanup(() => ro.disconnect());
   });
 
@@ -248,22 +259,22 @@ function MessageList(props: { chat: Chat }) {
   let lastLen = state.convo.messages.length;
   let lastId = state.convo.messages[lastLen - 1]?.id;
   createEffect(on(() => state.convo.messages.length, (len) => {
-    const tail = state.convo.messages[len - 1];
-    const appended = len > lastLen && tail && tail.id !== lastId;
+    const last = state.convo.messages[len - 1];
+    const appended = len > lastLen && last && last.id !== lastId;
     if (appended) {
-      if (pinned) queueMicrotask(toBottom);
-      else if (!tail.fromMe) setBelow((n) => n + 1);
+      if (pinned) queueMicrotask(stick);
+      else if (!last.fromMe) setBelow((n) => n + 1);
     }
     lastLen = len;
-    lastId = tail?.id;
+    lastId = last?.id;
   }, { defer: true }));
 
+  // Sending always brings the view down to the new message.
   createEffect(on(stickSignal, () => {
     pinned = true;
     setAtBottom(true);
     setBelow(0);
     queueMicrotask(toBottom);
-    requestAnimationFrame(toBottom);
   }, { defer: true }));
 
   createEffect(on(jumpSignal, (j) => {
@@ -280,16 +291,19 @@ function MessageList(props: { chat: Chat }) {
     requestAnimationFrame(go);
   }, { defer: true }));
 
-  createEffect(on(() => typingLabel(props.chat.id), () => { if (pinned) requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; }); }, { defer: true }));
-
   let loadingOlder = false;
   const onScroll = () => {
-    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    const bottom = gap < 60;
-    if (bottom !== pinned) {
-      pinned = bottom && !state.convo.detached;
-      setAtBottom(pinned);
+    const top = scroller.scrollTop;
+    const gap = scroller.scrollHeight - top - scroller.clientHeight;
+    const bottom = gap < 4;
+    if (bottom && !pinned && !state.convo.detached) {
+      pinned = true;
+      setAtBottom(true);
+    } else if (pinned && top < lastTop - 1 && gap > 60) {
+      pinned = false;
+      setAtBottom(false);
     }
+    lastTop = top;
     if (bottom && below()) setBelow(0);
     if (scroller.scrollTop < 700 && !loadingOlder && !state.convo.atStart && state.convo.messages.length) {
       loadingOlder = true;
@@ -309,7 +323,7 @@ function MessageList(props: { chat: Chat }) {
   return (
     <>
       <div class="msg-scroll" ref={scroller} onScroll={onScroll}>
-        <Virtualizer ref={(h) => (handle = h)} data={layout().items} shift={shift()} bufferSize={500}>
+        <Virtualizer ref={(h) => (handle = h)} data={layout().items} shift={shift()} bufferSize={500} onResize={onListResize}>
           {(it) => (
             <Switch>
               <Match when={it.k === "top"}>
@@ -342,17 +356,19 @@ function MessageList(props: { chat: Chat }) {
             </Switch>
           )}
         </Virtualizer>
-        <Show when={typers().length}>
-          <div class="typing-row">
-            <Show when={props.chat.kind !== "direct"}><Avatar id={typers()[0][0]} size={30} /></Show>
-            <div class="typing-bubble" style={{ "--tone": `var(--tone-${tone(typers()[0][0])})` }}>
-              <Show when={typers()[0][1] === "recording"} fallback={<><i /><i /><i /></>}>
-                <Icon name="microphone-fill" /><i /><i /><i />
-              </Show>
+        <div ref={tail}>
+          <Show when={typers().length}>
+            <div class="typing-row">
+              <Show when={props.chat.kind !== "direct"}><Avatar id={typers()[0][0]} size={30} /></Show>
+              <div class="typing-bubble" style={{ "--tone": `var(--tone-${tone(typers()[0][0])})` }}>
+                <Show when={typers()[0][1] === "recording"} fallback={<><i /><i /><i /></>}>
+                  <Icon name="microphone-fill" /><i /><i /><i />
+                </Show>
+              </div>
             </div>
-          </div>
-        </Show>
-        <div class="msg-pad" />
+          </Show>
+          <div class="msg-pad" />
+        </div>
       </div>
       <Show when={!atBottom() || state.convo.detached}>
         <button class="jump" aria-label="Jump to latest" onClick={() => void jumpToLatest()}>

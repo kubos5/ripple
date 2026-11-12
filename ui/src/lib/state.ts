@@ -80,7 +80,7 @@ const DEFAULT_SETTINGS: Settings = {
   theme: "system", accent: "mono", font: "system", design: 2, textScale: 1, compact: false, enterSends: true, notifications: true,
   notificationPreview: true, notificationSound: true, autoImages: true, autoAudio: true, autoVideo: false,
   autoDocuments: false, linkPreviews: true, closeToTray: true, autostart: false, spellcheck: true,
-  reduceMotion: "system", sidebarWidth: 348, quickReactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
+  sidebarWidth: 348, quickReactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
 };
 
 const emptyConvo = (): Convo => ({
@@ -124,7 +124,6 @@ export const [state, setState] = createStore<State>({
 });
 
 /** Ids of messages that just arrived, so their bubbles animate in once. */
-export const freshIds = new Set<string>();
 /** Bumped whenever the list should stick to the bottom after an update. */
 export const [stickSignal, setStick] = createSignal(0);
 /** Bumped when the sticker library changes (sync, download, favourite). */
@@ -375,10 +374,6 @@ function onMessage(m: Message, fresh: boolean) {
   } else if (!c.detached) {
     const last = c.messages[c.messages.length - 1];
     if (!last || m.ts > last.ts || (m.ts === last.ts && m.seq > last.seq)) {
-      if (fresh) {
-        freshIds.add(m.id);
-        setTimeout(() => freshIds.delete(m.id), 900);
-      }
       setState("convo", "messages", c.messages.length, m);
       if (m.fromMe && fresh) setStick((n) => n + 1);
     }

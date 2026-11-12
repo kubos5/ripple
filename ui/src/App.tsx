@@ -1,7 +1,7 @@
 import { Match, Show, Switch, createEffect, onCleanup, onMount } from "solid-js";
 import { loadFont } from "./lib/fonts";
 import { inTauri } from "./lib/ipc";
-import { act, boot, closeChat, derived, openChat, openModal, setState, state } from "./lib/state";
+import { act, boot, closeChat, derived, openChat, openModal, setState, state, toast } from "./lib/state";
 import { Conversation } from "./components/Conversation";
 import { Lightbox } from "./components/Lightbox";
 import { ModalHost } from "./components/Modals";
@@ -22,7 +22,6 @@ function useAppearance() {
     root.dataset.font = s.font;
     void loadFont(s.font);
     root.dataset.density = s.compact ? "compact" : "comfortable";
-    root.dataset.motion = s.reduceMotion === "on" ? "reduce" : s.reduceMotion === "off" ? "full" : "system";
     root.dataset.platform = state.platform;
     root.dataset.shell = inTauri ? "tauri" : "browser";
     root.style.setProperty("--scale", String(s.textScale));
@@ -90,7 +89,7 @@ function useShell() {
     if (!a || !/^(https?:|mailto:|tel:)/i.test(a.href)) return;
     e.preventDefault();
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    void openUrl(a.href).catch(() => {});
+    openUrl(a.href).catch(() => toast("Couldn't open that link", "error"));
   };
   onMount(() => {
     window.addEventListener("mousedown", onDown);

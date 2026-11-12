@@ -26,7 +26,10 @@ multi-select, disappearing messages, read receipts and typing indicators.
 
 **Media.** Photos, videos, albums, GIFs, documents, audio, voice notes (record,
 waveform, 1×/1.5×/2× playback), stickers (recents and favourites synced with
-WhatsApp on your phone, create from any image), view-once media, a lightbox with zoom, and a per-chat media gallery.
+WhatsApp on your phone, details and save-as-image for any sticker in a chat,
+create from any image), view-once media, a lightbox with zoom, and a per-chat
+media gallery. Older files whose download link has expired are fetched again by
+asking your phone to re-upload them, as WhatsApp's own linked devices do.
 
 **More message types.** Polls, events with RSVP, locations, contact cards.
 
@@ -36,7 +39,13 @@ announcements channel and subgroups, creating communities, linking groups.
 
 **Desktop.** Native notifications, unread badge, tray icon (Windows and Linux),
 launch at login, light and dark themes, accent colours, a choice of fonts,
-adjustable text size, reduced motion.
+adjustable text size. On macOS 26 and later the app icon takes the system's
+dark icon background in dark mode.
+
+**Motion.** The interface doesn't animate: menus, sheets, messages and panels
+appear and disappear instantly. The only things that move on their own are the
+typing indicator, loading spinners, the QR code countdown and the rings on the
+welcome screen.
 
 **Not included yet:** Status, Channels, and answering voice or video calls
 (incoming calls show a banner you can decline).
@@ -132,6 +141,12 @@ Chat and message lists are virtualised, so only what is on screen is rendered
 - Live WhatsApp behaviour depends on `whatsapp-rust`, which is pre-1.0; expect
   occasional breakage when WhatsApp changes its protocol. Ripple pins an
   unreleased upstream commit, because sticker sync is not in a release yet.
+- Stickers whose files WhatsApp has deleted, and that your phone no longer
+  has either, can't be shown. They stay listed under Favourites (so you can
+  remove them) and come back if someone sends them again.
+- The macOS layered icon (`ui/src-tauri/icons/macos/Assets.car`) is compiled
+  from `Ripple.icon` with Xcode 26 or later (`ui/scripts/mac-icon.sh`); the
+  compiled file is committed, so ordinary builds don't need Xcode.
 - Votes on polls that arrive through history sync (sent before you linked) are
   not shown; votes cast afterwards are.
 - GIF files are sent as documents (WhatsApp GIFs are short MP4 videos, and

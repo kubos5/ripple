@@ -36,8 +36,10 @@ export function Rail() {
       aria-label={label}
       onClick={() => go(v)}
     >
-      <Icon name={state.view === v ? (`${icon}-fill` as IconName) : icon} />
-      <Show when={count?.()}>{(n) => <span class="badge">{n() > 99 ? "99+" : n()}</span>}</Show>
+      <span class="rail-face">
+        <Icon name={state.view === v ? (`${icon}-fill` as IconName) : icon} />
+        <Show when={count?.()}>{(n) => <span class="badge">{n() > 99 ? "99+" : n()}</span>}</Show>
+      </span>
     </button>
   );
   return (
@@ -52,7 +54,7 @@ export function Rail() {
       <div class="rail-spacer" />
       <div class="col no-drag" style={{ gap: "4px", "align-items": "center" }}>
         <button class="rail-btn" data-tip="Settings" data-tip-pos="right" aria-label="Settings" onClick={() => openModal("settings")}>
-          <Icon name="gear-six" />
+          <span class="rail-face"><Icon name="gear-six" /></span>
         </button>
         <Show when={state.me}>
           {(me) => (

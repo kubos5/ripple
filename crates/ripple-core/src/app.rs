@@ -2,7 +2,7 @@
 //! network reports, and tells the UI what changed.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -346,11 +346,13 @@ impl App {
         if !s.notifications || chat.archived || (muted && !mentioned) {
             return;
         }
-        let sender = self.display_name(&m.sender);
-        let (title, body) = if chat.kind == ChatKind::Direct {
-            (chat.name.clone(), m.content.summary())
+        // Names come from the contact book, not `chat.name`, which is fixed when the
+        // chat is created and is often still a bare phone number.
+        let title = self.display_name(&chat.id);
+        let body = if chat.kind == ChatKind::Direct {
+            m.content.summary()
         } else {
-            (chat.name.clone(), format!("{sender}: {}", m.content.summary()))
+            format!("{}: {}", self.display_name(&m.sender), m.content.summary())
         };
         let body = if s.notification_preview { truncate(&body, 180) } else { "New message".into() };
         self.emit(UiEvent::Notify { chat: chat.id.clone(), id: m.id.clone(), title, body, avatar: chat.avatar.clone() });
@@ -1305,6 +1307,54 @@ impl App {
                 self.fire_quiet(NetOp::StickerFavorite { sticker: Box::new(s), on: true });
                 val(self.store.stickers())
             }
+            Request::StickerDetails { chat, id } => {
+                let m = self.store.message(&chat, &id).ok_or_else(|| anyhow!("Message not found"))?;
+                let Content::Sticker { media, width, height, animated } = &m.content else { bail!("That message isn't a sticker") };
+                let bytes = media.token.as_deref().and_then(|t| self.media.path(t)).and_then(|p| std::fs::read(p).ok());
+                // What WhatsApp says about it (its library id, description, flags).
+                let info = self.net().exec(NetOp::StickerInfo { target: Box::new(m.clone()) }).await.unwrap_or(Value::Null);
+                let sid = info
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .or_else(|| bytes.as_deref().map(file_hash));
+                let favorite = sid.as_deref().and_then(|s| self.store.sticker(s)).is_some_and(|s| s.favorite);
+                let pack = bytes.as_deref().and_then(media::sticker_pack_info).unwrap_or_default();
+                let text = |k: &str| info.get(k).and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+                let flag = |k: &str| info.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+                // WhatsApp's own emoji tags are a plain string; the file's are a list.
+                let mut emojis = pack.emojis;
+                if emojis.is_empty()
+                    && let Some(e) = text("emojis")
+                {
+                    emojis = e.split([',', ' ']).filter(|s| !s.is_empty()).map(String::from).collect();
+                }
+                val(json!({
+                    "id": sid,
+                    "favorite": favorite,
+                    "animated": animated,
+                    "width": width,
+                    "height": height,
+                    "size": bytes.as_ref().map(|b| b.len()),
+                    "label": text("label"),
+                    "emojis": emojis,
+                    "pack": pack.pack,
+                    "publisher": pack.publisher,
+                    "ai": flag("ai"),
+                    "avatar": flag("avatar"),
+                }))
+            }
+            Request::StickerSave { chat, id, to } => {
+                let m = self.store.message(&chat, &id).ok_or_else(|| anyhow!("Message not found"))?;
+                let token = m.content.media().and_then(|x| x.token.clone()).ok_or_else(|| anyhow!("Download the sticker first"))?;
+                let src = self.media.path(&token).ok_or_else(|| anyhow!("Sticker is missing"))?;
+                if to.to_ascii_lowercase().ends_with(".png") {
+                    media::sticker_to_png(&std::fs::read(&src)?, Path::new(&to))?;
+                } else {
+                    std::fs::copy(src, &to).with_context(|| format!("save to {to}"))?;
+                }
+                Ok(Value::Null)
+            }
 
             // ── voice notes ──
             Request::RecordStart => self.record_start(),
@@ -1627,13 +1677,33 @@ impl App {
 
     /// A sticker was sent from one of the user's devices at `ts`.
     pub fn sticker_sent(&self, id: &str, ts: i64, remote: Option<RemoteSticker>, animated: bool) {
+        let fresh = remote.is_some();
         self.ingest_sticker(id, |s| {
             s.used = s.used.max(ts);
             s.animated |= animated;
-            if s.remote.is_none() {
+            // A just-sent copy has a live path; an old one may have expired.
+            if fresh && (s.remote.is_none() || s.token.is_none() || s.missing) {
                 s.remote = remote;
+                s.missing = false;
             }
         });
+        if fresh {
+            lock(&self.sticker_jobs).remove(id);
+        }
+    }
+
+    /// A message carrying a sticker arrived. If that sticker is in the library
+    /// but couldn't be downloaded, the message's newer copy is used instead.
+    pub fn sticker_seen(&self, id: &str, remote: RemoteSticker) {
+        let Some(s) = self.store.sticker(id) else { return };
+        if s.token.is_some() && !s.missing {
+            return;
+        }
+        self.ingest_sticker(id, |s| {
+            s.remote = Some(remote);
+            s.missing = false;
+        });
+        lock(&self.sticker_jobs).remove(id);
     }
 
     /// Another device removed a sticker from "Recent" (if not sent again since `before`).
@@ -1647,7 +1717,7 @@ impl App {
     fn sticker_list(self: &Arc<Self>) -> Vec<Sticker> {
         let list = self.store.stickers();
         let absent = |s: &&Sticker| {
-            s.remote.is_some() && s.token.as_deref().and_then(|t| self.media.path(t)).is_none_or(|p| !p.exists())
+            s.remote.is_some() && !s.missing && s.token.as_deref().and_then(|t| self.media.path(t)).is_none_or(|p| !p.exists())
         };
         // Every favourite, plus the recents the picker actually shows.
         let missing = list
@@ -1672,7 +1742,12 @@ impl App {
             let id = s.id.clone();
             match app.net().exec(NetOp::StickerDownload { sticker: Box::new(s) }).await {
                 Ok(v) => {
-                    let Some(token) = v.get("token").and_then(|t| t.as_str()).map(String::from) else { return };
+                    let Some(token) = v.get("token").and_then(|t| t.as_str()).map(String::from) else {
+                        // Gone for good. Stays in `sticker_jobs`; a fresh copy clears both.
+                        app.ingest_sticker(&id, |s| s.missing = true);
+                        return;
+                    };
+                    let remote = v.get("remote").and_then(|r| serde_json::from_value::<RemoteSticker>(r.clone()).ok());
                     let animated = app
                         .media
                         .path(&token)
@@ -1681,11 +1756,19 @@ impl App {
                     app.ingest_sticker(&id, |s| {
                         s.token = Some(token);
                         s.animated = animated;
+                        s.missing = false;
+                        // The copy that worked, so favouriting it syncs a usable reference.
+                        if remote.is_some() {
+                            s.remote = remote;
+                        }
                     });
                     lock(&app.sticker_jobs).remove(&id);
                 }
-                // Left in `sticker_jobs` so a broken file isn't retried on every open.
-                Err(e) => log::info!("sticker download failed: {e:#}"),
+                // A network problem or an offline phone: tried again next time the picker opens.
+                Err(e) => {
+                    log::info!("sticker download failed: {e:#}");
+                    lock(&app.sticker_jobs).remove(&id);
+                }
             }
         });
     }

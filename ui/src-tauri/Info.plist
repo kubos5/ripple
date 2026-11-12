@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- macOS 26+ uses the layered icon in Resources/Assets.car (built from icons/macos/Ripple.icon),
+       which switches to the system's dark icon background in dark mode. Older versions use icon.icns. -->
+  <key>CFBundleIconName</key>
+  <string>Ripple</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Ripple uses the microphone to record voice messages you choose to send.</string>
 </dict>

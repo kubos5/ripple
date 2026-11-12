@@ -166,9 +166,6 @@ function AppearancePane() {
           <span style={{ "font-size": "17px" }}>A</span>
         </Row>
         <Check title="Compact chat list" sub="Fit more conversations on screen" on={s().compact} set={(v) => updateSettings({ compact: v })} />
-        <Row title="Animations" sub="Reduce motion if you prefer calmer transitions">
-          <Select value={s().reduceMotion} set={(v) => updateSettings({ reduceMotion: v })} options={[["system", "Follow system"], ["off", "Always on"], ["on", "Reduced"]]} />
-        </Row>
       </div>
     </>
   );

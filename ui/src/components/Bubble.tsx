@@ -5,7 +5,7 @@ import { inTauri, mediaUrl } from "../lib/ipc";
 import { clock, duration, ephemeralLabel, fileSize, fullStamp, phone, plural, tone } from "../lib/format";
 import { type Block, type Inline, jumboEmoji, parse } from "../lib/rich";
 import {
-  act, contactName, freshIds, isAdmin, jumpToMessage, openModal, previewText, setState, startChat, state, toast, toggleSelect,
+  act, contactName, isAdmin, jumpToMessage, openModal, previewText, setState, startChat, state, toast, toggleSelect,
 } from "../lib/state";
 import type { Content, ContentOf, Media, Message, Quote, Reaction } from "../lib/types";
 import { KIND_ICON, Ticks, bumpStars } from "./Sidebar";
@@ -82,7 +82,7 @@ function Meta(props: { m: Message; mode: "abs" | "row" | "over" | "float" }) {
       <Show when={m().edited > 0}><span>Edited</span></Show>
       <span>{clock(m().ts)}</span>
       <Show when={m().fromMe} keyed>
-        <Show when={m().status} keyed>{(s) => <Ticks status={s} class="tick-swap" />}</Show>
+        <Show when={m().status}>{(s) => <Ticks status={s()} />}</Show>
       </Show>
     </div>
   );
@@ -275,8 +275,8 @@ function Voice(props: { m: Message; c: ContentOf<"audio"> }) {
         <Switch>
           <Match when={props.c.media.state === "downloading"}><Icon name="circle-notch" class="ring-progress" /></Match>
           <Match when={!ready()}><Icon name={props.c.media.state === "failed" ? "arrow-clockwise" : "download-simple"} /></Match>
-          <Match when={mine() && !mine()!.paused}><Icon name="pause-fill" class="swap" /></Match>
-          <Match when={true}><Icon name="play-fill" class="swap" /></Match>
+          <Match when={mine() && !mine()!.paused}><Icon name="pause-fill" /></Match>
+          <Match when={true}><Icon name="play-fill" /></Match>
         </Switch>
       </button>
       <div class="grow">
@@ -553,13 +553,12 @@ export function openReactBar(at: HTMLElement | MouseEvent, m: Message) {
     render: (close) => (
       <div class="react-bar">
         <For each={state.settings.quickReactions}>
-          {(e, i) => (
-            <button class={mine === e ? "mine" : ""} style={{ "--i": i() }} onClick={() => { react(m, e); close(); }}>{e}</button>
+          {(e) => (
+            <button class={mine === e ? "mine" : ""} onClick={() => { react(m, e); close(); }}>{e}</button>
           )}
         </For>
         <button
           class="more"
-          style={{ "--i": 6 }}
           aria-label="More emoji"
           onClick={() => openMenu(anchor, [], { class: "flush", align, render: (done) => <EmojiPicker onPick={(e) => { react(m, e); done(); }} autofocus /> })}
         >
@@ -665,7 +664,6 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
   const is = <T extends Content["type"]>(t: T) => (c().type === t ? (c() as ContentOf<T>) : undefined);
   const group = () => m().chat.endsWith("@g.us");
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const fresh = freshIds.has(props.m.id);
   useAutoDownload(m);
 
   const album = () => props.album?.();
@@ -705,7 +703,7 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
       </Match>
       <Match when={true}>
         <div
-          class={`msg ${m().fromMe ? "out" : "in"} ${props.flags().first ? "first" : ""} ${props.flags().last ? "last" : ""} ${m().reactions.length ? "has-reactions" : ""} ${selected() ? "selected" : ""} ${state.selecting ? "selecting" : ""} ${state.convo.flash === m().id ? "flash" : ""} ${fresh ? "fresh" : ""} ${menuOpen() ? "menu-open" : ""}`}
+          class={`msg ${m().fromMe ? "out" : "in"} ${props.flags().first ? "first" : ""} ${props.flags().last ? "last" : ""} ${m().reactions.length ? "has-reactions" : ""} ${selected() ? "selected" : ""} ${state.selecting ? "selecting" : ""} ${state.convo.flash === m().id ? "flash" : ""} ${menuOpen() ? "menu-open" : ""}`}
           data-mid={m().id}
           onContextMenu={menu}
           onClick={() => state.selecting && toggleSelect(m().id)}
@@ -801,7 +799,14 @@ export function MessageRow(props: { m: Message; flags: () => RowFlags; album?: (
                 {(s) => (
                   <div style={{ position: "relative", "padding-bottom": "16px" }}>
                     <Show when={s().media.state === "ready"} fallback={<div class="sticker-skel"><Icon name={s().media.state === "downloading" ? "circle-notch" : "sticker"} class={s().media.state === "downloading" ? "ring-progress" : ""} size={26} /></div>}>
-                      <img class="sticker" src={mediaUrl(s().media.token)} alt="Sticker" draggable={false} loading="lazy" />
+                      <img
+                        class="sticker"
+                        src={mediaUrl(s().media.token)}
+                        alt="Sticker"
+                        draggable={false}
+                        loading="lazy"
+                        onClick={(e) => { e.stopPropagation(); openModal("sticker", { chat: m().chat, id: m().id }); }}
+                      />
                     </Show>
                     <Meta m={m()} mode="float" />
                   </div>
