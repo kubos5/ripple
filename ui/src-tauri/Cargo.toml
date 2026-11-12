@@ -24,3 +24,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
 log = "0.4"
 percent-encoding = "2"
+
+# Windows toasts with the sender's photo and a click-to-open handler.
+[target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "0.8"

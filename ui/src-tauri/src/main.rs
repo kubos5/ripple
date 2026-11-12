@@ -61,6 +61,39 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Shows a Windows toast with the sender's photo and opens the app on click.
+#[cfg(windows)]
+fn show_toast(app: &AppHandle, core: &Arc<Ripple>, title: &str, body: &str, avatar: Option<&str>, sound: bool) {
+    use tauri_winrt_notification::{IconCrop, Toast};
+
+    let mut toast = Toast::new(&toast_app_id(app)).title(title).text1(body);
+    if !sound {
+        toast = toast.sound(None);
+    }
+    // The avatar token resolves to the downloaded profile photo on disk.
+    if let Some(path) = avatar.and_then(|token| core.media_path(token)) {
+        toast = toast.icon(&path, IconCrop::Circular, "profile picture");
+    }
+    let open = app.clone();
+    let _ = toast
+        .on_activated(move |_| {
+            show_main(&open);
+            Ok(())
+        })
+        .show();
+}
+
+/// The AUMID Windows needs to attribute a toast to Ripple. An installed app has
+/// its identifier registered by the installer; in development the PowerShell
+/// fallback (the one the notification plugin also uses) avoids a failing show.
+#[cfg(windows)]
+fn toast_app_id(app: &AppHandle) -> String {
+    use tauri_winrt_notification::Toast;
+    let exe = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default();
+    let dev = exe.contains("\\target\\debug\\") || exe.contains("\\target\\release\\");
+    if dev { Toast::POWERSHELL_APP_ID.to_string() } else { app.config().identifier.clone() }
+}
+
 fn apply_settings(app: &AppHandle, s: &ripple_core::model::Settings) {
     CLOSE_TO_TRAY.store(s.close_to_tray, Ordering::Relaxed);
     let auto = app.autolaunch();
@@ -76,14 +109,20 @@ fn watch(app: AppHandle, core: Arc<Ripple>) {
     tauri::async_runtime::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(UiEvent::Notify { title, body, .. }) => {
+                Ok(UiEvent::Notify { ref title, ref body, ref avatar, .. }) => {
                     let focused = app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false));
                     if !focused {
-                        let mut n = app.notification().builder().title(title).body(body);
-                        if core.app().settings().notification_sound {
-                            n = n.sound("default");
+                        let sound = core.app().settings().notification_sound;
+                        #[cfg(windows)]
+                        show_toast(&app, &core, title, body, avatar.as_deref(), sound);
+                        #[cfg(not(windows))]
+                        {
+                            let mut n = app.notification().builder().title(title.clone()).body(body.clone());
+                            if sound {
+                                n = n.sound("default");
+                            }
+                            let _ = n.show();
                         }
-                        let _ = n.show();
                     }
                 }
                 Ok(UiEvent::Badge { count }) => {

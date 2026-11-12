@@ -356,7 +356,14 @@ impl App {
             format!("{}: {}", self.display_name(&m.sender), m.content.summary())
         };
         let body = if s.notification_preview { truncate(&body, 180) } else { "New message".into() };
-        self.emit(UiEvent::Notify { chat: chat.id.clone(), id: m.id.clone(), title, body, avatar: chat.avatar.clone() });
+        // In a group the notification should show the sender's picture; the chat
+        // avatar there is the group icon.
+        let avatar = if chat.kind == ChatKind::Direct {
+            chat.avatar.clone()
+        } else {
+            self.store.contact(&m.sender).and_then(|c| c.avatar).or_else(|| chat.avatar.clone())
+        };
+        self.emit(UiEvent::Notify { chat: chat.id.clone(), id: m.id.clone(), title, body, avatar });
     }
 
     /// Changes a stored message and tells the UI. Also refreshes the chat
