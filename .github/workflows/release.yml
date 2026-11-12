@@ -1,0 +1,104 @@
+name: Release
+
+# Builds the installers for every platform and attaches them to a draft GitHub release.
+# To cut a release: set the version in ui/src-tauri/tauri.conf.json, Cargo.toml and
+# ui/package.json, commit, then push a matching tag (git tag v0.2.0 && git push origin v0.2.0).
+# Review the draft on GitHub's Releases page and publish it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            target: ""
+            args: ""
+          - name: Windows
+            os: windows-latest
+            target: ""
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      # Optional: sign and notarise the macOS app. Without these repository secrets the
+      # app ships unsigned (see "Installing" in the README).
+      - name: Load macOS signing secrets
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          [ -n "$APPLE_CERTIFICATE" ] || { echo "No signing certificate: building unsigned."; exit 0; }
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              printf '%s<<__END__\n%s\n__END__\n' "$name" "$value" >> "$GITHUB_ENV"
+            fi
+          done
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ui
+          tagName: ${{ github.ref_name }}
+          releaseName: Ripple ${{ github.ref_name }}
+          releaseBody: |
+            Installers for this version are attached below.
+
+            - **Windows:** `Ripple_*_x64-setup.exe`
+            - **macOS:** `Ripple_*_aarch64.dmg` (Apple silicon) or `Ripple_*_x64.dmg` (Intel)
+            - **Linux:** `.AppImage`, `.deb` or `.rpm`
+
+            Ripple is an unofficial client. Using it may break WhatsApp's terms of service.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

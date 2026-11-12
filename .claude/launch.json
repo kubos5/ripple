@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bridge",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "-q", "-p", "ripple-bridge"],
+      "port": 1421
+    },
+    {
+      "name": "ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ui", "run", "dev"],
+      "port": 1420
+    }
+  ]
+}

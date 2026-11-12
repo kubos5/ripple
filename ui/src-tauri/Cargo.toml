@@ -1,0 +1,26 @@
+[package]
+name = "ripple"
+description = "A fast, polished desktop client for WhatsApp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "ripple"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ripple-core = { path = "../../crates/ripple-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-log = "2"
+serde_json = "1"
+tokio = { version = "1", features = ["sync"] }
+log = "0.4"
+percent-encoding = "2"

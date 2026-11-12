@@ -1,0 +1,351 @@
+/* App frame: rail, sidebar, chat list. */
+
+.app {
+  display: flex;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ───────────── rail ───────────── */
+.rail {
+  width: var(--rail-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  /* The profile picture at the bottom sits as far from the bottom edge as from the sides
+     (14.5px here, 35.5px in the wider macOS rail; the 1px is the border on the right). */
+  padding: 14px 0 calc((var(--rail-w) - 1px - 34px) / 2);
+  background: var(--bg-rail);
+  border-right: 1px solid var(--line);
+}
+:root[data-shell="tauri"][data-platform="macos"] .rail { padding-top: var(--header-h); }
+.rail-mark {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 14px;
+  color: var(--accent);
+}
+:root[data-shell="tauri"][data-platform="macos"] .rail-mark { display: none; }
+/* The button holds the edge indicator and stays put; only its face shrinks when pressed.
+   It keeps 10px from both rail edges: a square in the 64px rail, a wider rectangle in macOS's. */
+.rail-btn {
+  position: relative;
+  display: grid;
+  width: calc(var(--rail-w) - 20px);
+  height: 44px;
+  color: var(--text-3);
+}
+.rail-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+}
+.rail-btn .icon { font-size: 23px; }
+.rail-btn:hover { color: var(--text); }
+.rail-btn:hover .rail-face { background: var(--surface-2); }
+.rail-btn:active .rail-face { transform: scale(0.97); }
+.rail-btn.on { color: var(--accent); }
+.rail-btn.on .rail-face { background: var(--accent-soft); }
+.rail-btn.on::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 12px;
+  width: 4px;
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.rail-btn .badge {
+  position: absolute;
+  top: 2px;
+  right: calc(50% - 22px); /* by the icon, however wide the button is */
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 10px;
+  box-shadow: 0 0 0 2.5px var(--bg-rail);
+}
+.rail-spacer { flex: 1; align-self: stretch; }
+.rail-me {
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.rail-me:hover { box-shadow: 0 0 0 2px var(--bg-rail), 0 0 0 4px var(--line-strong); }
+.rail-me:active { transform: scale(0.97); }
+
+
+/* ───────────── sidebar ───────────── */
+.sidebar {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-side);
+  border-right: 1px solid var(--line);
+}
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  z-index: 5;
+  cursor: col-resize;
+}
+.sidebar-resize::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: var(--accent);
+  opacity: 0;
+}
+.sidebar-resize:hover::after { opacity: 0.7; transition: opacity 0s 150ms; }
+.sidebar-resize.dragging::after { opacity: 0.7; }
+
+.side-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--header-h);
+  padding: 0 12px 0 20px;
+  flex: none;
+}
+.side-head h1 {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: var(--fs-20);
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 24;
+}
+.side-head.sub { padding-left: 10px; }
+.side-head.sub h1 { font-size: var(--fs-17); }
+
+.search {
+  position: relative;
+  margin: 0 12px 8px;
+  flex: none;
+}
+.search .icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 17px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.search:focus-within .icon { color: var(--accent); }
+.search input {
+  width: 100%;
+  height: 36px;
+  padding: 0 34px 0 36px;
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
+  background: var(--surface-1);
+  cursor: text;
+}
+.search input::placeholder { color: var(--text-3); }
+.search input:hover { background: var(--surface-2); }
+.search input:focus { background: var(--surface-1); border-color: var(--accent); }
+.search .kbd-hint { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; gap: 3px; pointer-events: none; }
+.search:focus-within .kbd-hint { display: none; }
+.search .clear { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; border-radius: var(--r-round); }
+
+.chips {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 10px;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.side-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 8px;
+}
+.side-section {
+  padding: 14px 20px 6px;
+  font-size: var(--fs-11);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ───────────── chat rows ───────────── */
+.chat-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 16px);
+  height: calc(var(--row-h) - 4px);
+  margin: 2px 8px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  text-align: left;
+}
+.chat-row:hover { background: var(--surface-1); }
+.chat-row.on { background: var(--surface-2); }
+.chat-row .avatar-wrap .online { --dot-ring: var(--bg-side); }
+.chat-row:hover .avatar-wrap .online { --dot-ring: var(--surface-1); }
+.chat-row.on .avatar-wrap .online { --dot-ring: var(--surface-2); }
+.chat-row .lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.chat-row .top, .chat-row .bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-row .name {
+  flex: 1;
+  font-weight: 600;
+  font-size: var(--fs-15);
+  letter-spacing: -0.005em;
+}
+.chat-row .time { font-size: var(--fs-12); color: var(--text-3); flex: none; font-variant-numeric: tabular-nums; }
+.chat-row.unread .time { color: var(--accent); font-weight: 600; }
+.chat-row .preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text-2);
+}
+.chat-row.unread .preview { color: var(--text); }
+.chat-row .preview .icon { font-size: 15px; color: var(--text-3); }
+.chat-row .preview .who { flex: none; max-width: 45%; }
+.chat-row .preview .typing { color: var(--accent); font-weight: 540; }
+.chat-row .preview .draft { color: var(--danger); font-weight: 600; flex: none; }
+.chat-row .marks { display: flex; align-items: center; gap: 5px; flex: none; color: var(--text-3); }
+.chat-row .marks .icon { font-size: 15px; }
+.chat-row .marks .at { background: var(--accent-soft); color: var(--accent); padding: 0; width: 20px; }
+.chat-row .marks .at .icon { font-size: 13px; color: inherit; }
+:root[data-density="compact"] .chat-row .avatar { --size: 40px !important; }
+
+.tick { font-size: 16px !important; flex: none; }
+.tick.read { color: var(--accent) !important; }
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 16px);
+  min-height: 56px;
+  margin: 1px 8px;
+  padding: 7px 12px;
+  border-radius: var(--r-md);
+  text-align: left;
+}
+.list-row:hover, .list-row.active { background: var(--surface-1); }
+.list-row .title { font-weight: 580; font-size: var(--fs-14); }
+.list-row .sub { font-size: var(--fs-13); color: var(--text-2); }
+.list-row .glyph {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-round);
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
+}
+.list-row mark { background: none; color: var(--accent); font-weight: 650; }
+
+.archived-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: calc(100% - 16px);
+  margin: 0 8px 2px;
+  padding: 10px 12px 10px 27px;
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  font-weight: 560;
+  font-size: var(--fs-13);
+}
+.archived-link:hover { background: var(--surface-1); color: var(--text); }
+.archived-link .icon { font-size: 18px; }
+.archived-link .count { margin-left: auto; font-size: var(--fs-12); color: var(--accent); font-weight: 650; }
+
+/* ───────────── community home ───────────── */
+.community-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 12px 10px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  text-align: left;
+  width: calc(100% - 24px);
+}
+.community-hero:hover { background: var(--surface-2); }
+.community-hero .name { font-weight: 640; font-size: var(--fs-15); }
+.community-hero .sub { font-size: var(--fs-12); color: var(--text-2); margin-top: 2px; }
+
+/* ───────────── main area ───────────── */
+.main {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  background: var(--bg);
+}
+
+.blank {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px;
+  text-align: center;
+}
+.blank h2 { font-size: var(--fs-28); }
+.blank p { max-width: 360px; color: var(--text-2); line-height: 1.5; }
+.blank .keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; margin-top: 22px; color: var(--text-3); font-size: var(--fs-12); }
+.blank .keys span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Still rings around a dot. Sized by inset rather than scale so every line stays 1.5px. */
+.ripple-mark { position: relative; width: 132px; height: 132px; margin-bottom: 14px; }
+.ripple-mark i { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--accent); }
+.ripple-mark i:nth-child(1) { inset: 40px; opacity: 0.6; }
+.ripple-mark i:nth-child(2) { inset: 20px; opacity: 0.32; }
+.ripple-mark i:nth-child(3) { opacity: 0.14; }
+.ripple-mark b {
+  position: absolute;
+  inset: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px 8px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-13);
+  font-weight: 540;
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+  color: var(--warn);
+  flex: none;
+}
+.banner .icon { font-size: 18px; }
+.banner.demo { background: var(--accent-softer); color: var(--text-2); }
+.banner.demo .icon { color: var(--accent); }
+.banner button { margin-left: auto; color: var(--accent); font-weight: 650; }
+.banner button:hover { text-decoration: underline; }

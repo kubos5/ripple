@@ -1,0 +1,191 @@
+// Builds src/lib/icons.ts from Google's Material Symbols (outlined, weight 400; Apache-2.0).
+// Usage: node scripts/gen-icons.mjs node_modules/@material-symbols/svg-400/outlined src/lib/icons.ts
+//
+// The app refers to icons by stable internal keys; this table maps each key to a Material Symbols name.
+import fs from "node:fs";
+
+const root = process.argv[2];
+const MAP = {
+  "chats-circle": "forum",
+  "users-three": "groups",
+  star: "star",
+  archive: "archive",
+  "gear-six": "settings",
+  "magnifying-glass": "search",
+  "note-pencil": "edit_square",
+  x: "close",
+  "push-pin": "keep",
+  "speaker-slash": "volume_off",
+  at: "alternate_email",
+  "caret-down": "keyboard_arrow_down",
+  "caret-up": "keyboard_arrow_up",
+  "caret-right": "chevron_right",
+  "caret-left": "chevron_left",
+  plus: "add",
+  users: "group",
+  megaphone: "campaign",
+  "dots-three-vertical": "more_vert",
+  "dots-three": "more_horiz",
+  phone: "call",
+  "video-camera": "videocam",
+  "arrow-left": "arrow_back",
+  "sidebar-simple": "right_panel_open",
+  check: "check",
+  checks: "done_all",
+  clock: "schedule",
+  "warning-circle": "error",
+  "arrow-bend-up-left": "reply",
+  "arrow-bend-up-right": "forward",
+  smiley: "mood",
+  copy: "content_copy",
+  "pencil-simple": "edit",
+  trash: "delete",
+  info: "info",
+  "check-circle": "check_circle",
+  "download-simple": "download",
+  play: "play_arrow",
+  pause: "pause",
+  microphone: "mic",
+  "file-text": "description",
+  "map-pin": "location_on",
+  user: "person",
+  "chart-bar": "bar_chart",
+  "calendar-blank": "event",
+  image: "image",
+  camera: "photo_camera",
+  eye: "visibility",
+  prohibit: "block",
+  timer: "timer",
+  link: "link",
+  "arrow-down": "arrow_downward",
+  "arrow-up": "arrow_upward",
+  "share-fat": "forward",
+  sticker: "sticker",
+  gif: "gif",
+  paperclip: "attach_file",
+  "paper-plane-right": "send",
+  "phone-x": "call_end",
+  "phone-incoming": "phone_callback",
+  bell: "notifications",
+  "bell-slash": "notifications_off",
+  "sign-out": "logout",
+  moon: "dark_mode",
+  sun: "light_mode",
+  palette: "palette",
+  "shield-check": "verified_user",
+  lock: "lock",
+  database: "database",
+  keyboard: "keyboard",
+  "user-circle": "account_circle",
+  "qr-code": "qr_code",
+  "device-mobile": "mobile",
+  "magnifying-glass-plus": "zoom_in",
+  "magnifying-glass-minus": "zoom_out",
+  "speaker-high": "volume_up",
+  "hand-waving": "waving_hand",
+  globe: "public",
+  crown: "crown",
+  "user-plus": "person_add",
+  "user-minus": "person_remove",
+  "link-simple": "link",
+  "arrow-counter-clockwise": "restart_alt",
+  heart: "favorite",
+  "check-square": "check_box",
+  "arrow-square-out": "open_in_new",
+  warning: "warning",
+  "wifi-slash": "wifi_off",
+  funnel: "filter_list",
+  "text-aa": "format_size",
+  "envelope-simple": "mail",
+  tray: "inbox",
+  eraser: "ink_eraser",
+  images: "photo_library",
+  "circle-notch": "progress_activity",
+  "number-circle-one": "counter_1",
+  "file-pdf": "picture_as_pdf",
+  "file-zip": "folder_zip",
+  "file-image": "imagesmode",
+  "file-audio": "audio_file",
+  "file-video": "video_file",
+  file: "draft",
+  "file-doc": "article",
+  "file-xls": "table",
+  headphones: "headphones",
+  "arrow-clockwise": "refresh",
+  "sign-in": "login",
+  "chat-circle-dots": "sms",
+  lightning: "bolt",
+  monitor: "computer",
+  "list-bullets": "format_list_bulleted",
+  "address-book": "contacts",
+  circle: "circle",
+  "arrows-out-simple": "open_in_full",
+  hash: "tag",
+  "chat-circle": "chat_bubble",
+  "user-list": "group",
+  code: "code",
+  "text-b": "format_bold",
+  "text-italic": "format_italic",
+  "text-strikethrough": "format_strikethrough",
+  "clock-counter-clockwise": "history",
+  "door-open": "door_open",
+  shield: "shield",
+  "smiley-sticker": "add_reaction",
+  export: "ios_share",
+  flag: "flag",
+  "thumbs-up": "thumb_up",
+  "arrow-right": "arrow_forward",
+  "phone-slash": "phone_disabled",
+  "video-camera-slash": "videocam_off",
+  broom: "cleaning_services",
+  "hard-drives": "hard_drive",
+  sparkle: "wand_stars",
+  "app-window": "web_asset",
+  "bell-ringing": "notifications_active",
+  "cursor-click": "ads_click",
+  "magic-wand": "wand_stars",
+  rows: "view_agenda",
+  "squares-four": "grid_view",
+  "emoji-people": "emoji_people",
+  "emoji-nature": "emoji_nature",
+  "emoji-food": "emoji_food_beverage",
+  "emoji-travel": "emoji_transportation",
+  "emoji-activity": "sports_soccer",
+  "emoji-objects": "emoji_objects",
+  "emoji-symbols": "emoji_symbols",
+};
+
+// Filled variants, used for active states. A value overrides the default `<name>-fill`.
+const FILL = {
+  "chats-circle": null, "users-three": null, star: null, archive: null, "gear-six": null, "push-pin": null,
+  play: null, pause: null, microphone: null, "paper-plane-right": null, heart: null, "check-circle": null,
+  "warning-circle": null, "speaker-slash": null, "map-pin": null, "file-text": null, phone: null, "phone-x": null,
+  circle: null, smiley: null, megaphone: null, lock: null, crown: null, "caret-down": "arrow_drop_down",
+  "bell-slash": null, timer: null, eye: null, image: null, user: null, users: null, sticker: null, lightning: null,
+};
+
+const inner = (file) => {
+  if (!fs.existsSync(file)) return null;
+  const svg = fs.readFileSync(file, "utf8");
+  return svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "").trim();
+};
+
+const out = {};
+const missing = [];
+for (const [key, name] of Object.entries(MAP)) {
+  const v = inner(`${root}/${name}.svg`);
+  if (v) out[key] = v; else missing.push(`${key} (${name})`);
+}
+for (const [key, override] of Object.entries(FILL)) {
+  const name = MAP[key];
+  const v = override ? inner(`${root}/${override}.svg`) : inner(`${root}/${name}-fill.svg`) ?? inner(`${root}/${name}.svg`);
+  if (v) out[`${key}-fill`] = v; else missing.push(`${key}-fill`);
+}
+
+const body = Object.entries(out).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join("\n");
+fs.writeFileSync(
+  process.argv[3],
+  `// Generated by scripts/gen-icons.mjs from Google Material Symbols (Apache-2.0). Do not edit by hand.\n// viewBox: 0 -960 960 960\n\nexport const ICONS = {\n${body}\n} as const;\n\nexport type IconName = keyof typeof ICONS;\n`,
+);
+console.log("icons:", Object.keys(out).length, "missing:", missing.join(", ") || "none");
+if (missing.length) process.exit(1);
