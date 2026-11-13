@@ -189,6 +189,13 @@ impl DemoNet {
             sleep(ms(2_200)).await;
             app.ingest_typing(HIKERS, NOOR, "idle");
             app.ingest_message(incoming(HIKERS, NOOR, text("Just checked: the north car park opens at 7, so 7:45 is fine")), true);
+            drop(app);
+            sleep(ms(8_000)).await;
+            let Some(app) = weak.upgrade() else { return };
+            let ready = |m: &Message| m.content.media().is_some_and(|x| x.state == MediaState::Ready);
+            if let Some(sticker) = app.store.sticker_messages(50).into_iter().find(ready) {
+                app.ingest_message(incoming(AIKO, AIKO, sticker.content), true);
+            }
         });
     }
 
@@ -697,6 +704,88 @@ mod tests {
             }
         }
         assert_eq!(title.as_deref(), Some("Rosa Lind"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn notifications_carry_pictures() {
+        unsafe { std::env::set_var("RIPPLE_DEMO_QUIET", "1") };
+        let dir = temp();
+        let r = Ripple::open(dir.clone(), true).await.unwrap();
+        let app = r.app();
+        call(&r, json!({ "cmd": "focus", "on": false })).await;
+        let next_note = |events: &mut tokio::sync::broadcast::Receiver<UiEvent>| {
+            let mut events = events.resubscribe();
+            async move {
+                tokio::time::timeout(ms(6000), async {
+                    loop {
+                        if let Ok(UiEvent::Notify { chat, id, title, body, avatar, image }) = events.recv().await {
+                            return (chat, id, title, body, avatar, image);
+                        }
+                    }
+                })
+                .await
+                .expect("a notification")
+            }
+        };
+
+        // Dad has a profile picture; it comes round, as a PNG.
+        let pic = image::RgbImage::from_fn(120, 90, |x, y| image::Rgb([x as u8, y as u8, 90]));
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(pic).write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Jpeg).unwrap();
+        let token = app.media.write("a", "jpg", &jpeg).unwrap();
+        app.chat_mut(DAD, |c| c.avatar = Some(token.clone()));
+
+        // A sticker shows itself; the notification waits for its preview.
+        let sticker = app
+            .store
+            .sticker_messages(50)
+            .into_iter()
+            .find(|m| m.content.media().is_some_and(|x| x.state == MediaState::Ready))
+            .unwrap();
+        let mut events = r.subscribe();
+        let waiting = next_note(&mut events);
+        app.ingest_message(incoming(DAD, DAD, sticker.content.clone()), true);
+        let (chat, _, title, body, avatar, image) = waiting.await;
+        assert_eq!((chat.as_str(), title.as_str(), body.as_str()), (DAD, app.display_name(DAD).as_str(), "Sticker"));
+        let avatar = image::open(avatar.expect("the chat's picture")).unwrap().to_rgba8();
+        assert_eq!(avatar.get_pixel(0, 0)[3], 0, "the picture is round");
+        let preview = image::open(image.expect("the sticker")).unwrap();
+        assert!(preview.width() <= 512 && preview.height() <= 512);
+
+        // A photo that is not downloaded yet is fetched for the notification.
+        let remote = app
+            .store
+            .messages(DAD, None, 200)
+            .into_iter()
+            .find(|m| matches!(m.content, Content::Image { .. }) && m.content.media().is_some_and(|x| x.state == MediaState::Remote))
+            .expect("the demo has a photo that is not downloaded yet");
+        let mut photo = incoming(DAD, DAD, remote.content.clone());
+        photo.id = remote.id.clone();
+        app.store.delete_message(DAD, &remote.id).ok();
+        let waiting = next_note(&mut events);
+        app.ingest_message(photo, true);
+        let (.., body, _, image) = waiting.await;
+        assert!(body.starts_with("📷"));
+        assert!(image.is_some_and(|p| std::path::Path::new(&p).is_file()), "the photo was downloaded for the preview");
+
+        // With previews off, nothing about the chat or message shows.
+        let mut quiet = app.settings();
+        quiet.notification_preview = false;
+        app.handle(Request::SetSettings { settings: quiet }).await.unwrap();
+        let waiting = next_note(&mut events);
+        app.ingest_message(incoming(DAD, DAD, sticker.content.clone()), true);
+        let (_, _, title, body, avatar, image) = waiting.await;
+        assert_eq!((title.as_str(), body.as_str(), avatar, image), ("New message", "", None, None));
+
+        // An incoming call rings with a notification of its own.
+        let mut loud = app.settings();
+        loud.notification_preview = true;
+        app.handle(Request::SetSettings { settings: loud }).await.unwrap();
+        let waiting = next_note(&mut events);
+        app.ingest_call("C1", DAD, true, true, false);
+        let (chat, id, _, body, ..) = waiting.await;
+        assert_eq!((chat.as_str(), id, body.as_str()), (DAD, call_note_id("C1"), "📹 Incoming video call"));
         std::fs::remove_dir_all(dir).ok();
     }
 

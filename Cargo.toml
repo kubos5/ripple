@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/ripple-core", "crates/ripple-bridge", "ui/src-tauri"]
+members = ["crates/ripple-core", "crates/ripple-bridge", "crates/ripple-notify", "ui/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.95"

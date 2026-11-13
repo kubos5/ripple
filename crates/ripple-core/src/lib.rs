@@ -21,7 +21,8 @@ pub mod voice;
 pub mod wa;
 
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 use serde_json::Value;
@@ -35,6 +36,9 @@ pub struct Ripple {
     data_dir: PathBuf,
     events: broadcast::Sender<UiEvent>,
     app: RwLock<Arc<App>>,
+    /// Whether the UI has loaded; until then a chat to reveal waits in `reveal_later`.
+    ui_ready: AtomicBool,
+    reveal_later: Mutex<Option<String>>,
 }
 
 impl Ripple {
@@ -42,7 +46,13 @@ impl Ripple {
     pub async fn open(data_dir: PathBuf, demo: bool) -> Result<Arc<Ripple>> {
         let (events, _) = broadcast::channel(8192);
         let app = Self::build(&data_dir, &events, demo).await?;
-        Ok(Arc::new(Ripple { data_dir, events, app: RwLock::new(app) }))
+        Ok(Arc::new(Ripple {
+            data_dir,
+            events,
+            app: RwLock::new(app),
+            ui_ready: AtomicBool::new(false),
+            reveal_later: Mutex::new(None),
+        }))
     }
 
     async fn build(data_dir: &std::path::Path, events: &broadcast::Sender<UiEvent>, demo: bool) -> Result<Arc<App>> {
@@ -71,6 +81,15 @@ impl Ripple {
 
     pub fn subscribe(&self) -> broadcast::Receiver<UiEvent> {
         self.events.subscribe()
+    }
+
+    /// Shows a chat, because its notification was clicked. A click that launched the app
+    /// arrives before the UI has loaded; the chat is then opened once it has.
+    pub fn reveal(&self, chat: &str) {
+        if !self.ui_ready.load(Ordering::Relaxed) {
+            *self.reveal_later.lock().unwrap_or_else(|e| e.into_inner()) = Some(chat.to_string());
+        }
+        let _ = self.events.send(UiEvent::Open { chat: chat.to_string() });
     }
 
     pub fn app(&self) -> Arc<App> {
@@ -105,6 +124,14 @@ impl Ripple {
 
     pub async fn handle(&self, req: Request) -> Result<Value> {
         match req {
+            Request::Init => {
+                let mut init = self.app().handle(Request::Init).await?;
+                self.ui_ready.store(true, Ordering::Relaxed);
+                if let Some(chat) = self.reveal_later.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    init["open"] = Value::String(chat);
+                }
+                Ok(init)
+            }
             Request::DemoStart => self.switch(true).await.map(|_| Value::Null),
             Request::DemoExit => self.switch(false).await.map(|_| Value::Null),
             Request::Logout => {

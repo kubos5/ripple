@@ -326,7 +326,7 @@ function Mute() {
   const until = () => (v() === -1 ? -1 : Date.now() + v() * 3_600_000);
   return (
     <Sheet title="Mute notifications" foot={<><button class="btn ghost" onClick={closeModal}>Cancel</button><button class="btn primary" onClick={() => { closeModal(); void act("mute", { chat, until: until() }); }}>Mute</button></>}>
-      <p class="hint" style={{ "margin-bottom": "10px" }}>You'll still get notified when someone mentions you.</p>
+      <p class="hint" style={{ "margin-bottom": "10px" }}>You won't get notifications from this chat, not even when someone mentions you. Calls still ring.</p>
       <Choice value={v()} onPick={setV} options={[{ label: "8 hours", value: 8 }, { label: "1 week", value: 168 }, { label: "Always", value: -1 }]} />
     </Sheet>
   );

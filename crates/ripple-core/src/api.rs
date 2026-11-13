@@ -270,8 +270,11 @@ pub enum UiEvent {
     Settings { settings: Settings },
     Privacy { privacy: Privacy },
     Me { contact: Contact },
-    /// Ask the shell to raise a native notification.
-    Notify { chat: Jid, id: String, title: String, body: String, avatar: Option<String> },
+    /// Ask the shell to raise a native notification. `avatar` (the chat's picture, round) and
+    /// `image` (a photo or sticker preview) are absolute paths of PNG files.
+    Notify { chat: Jid, id: String, title: String, body: String, avatar: Option<String>, image: Option<String> },
+    /// A notification was clicked: show this chat.
+    Open { chat: Jid },
     Call { id: String, from: Jid, video: bool, ringing: bool },
     Recording { level: u8, elapsed: u32 },
     Progress { chat: Jid, id: String, progress: u8 },
@@ -280,6 +283,11 @@ pub enum UiEvent {
     Badge { count: u32 },
     /// The sticker library changed (synced, downloaded, favourited).
     Stickers,
+}
+
+/// The notification id of an incoming call, so the shell can take it down when ringing stops.
+pub fn call_note_id(call: &str) -> String {
+    format!("call-{call}")
 }
 
 // ───────────────────────────── core → network ─────────────────────────────

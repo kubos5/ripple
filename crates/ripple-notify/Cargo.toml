@@ -1,0 +1,43 @@
+[package]
+name = "ripple-notify"
+description = "Native message notifications for Ripple: macOS, Windows and Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+log = "0.4"
+tokio = { version = "1", features = ["sync", "macros"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSEnumerator", "NSError", "NSString", "NSURL", "NSDictionary"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationAttachment",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "Foundation_Collections", "UI_Notifications", "Win32_UI_Shell"] }
+windows-registry = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["async-io"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+async-io = "2"
+
+# The Linux code talks D-Bus, which also runs on macOS, so its tests run everywhere.
+[target.'cfg(unix)'.dev-dependencies]
+zbus = { version = "5", features = ["p2p"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+async-io = "2"
