@@ -196,6 +196,7 @@ export interface Settings {
   linkPreviews: boolean;
   closeToTray: boolean;
   autostart: boolean;
+  greenIcon: boolean;
   spellcheck: boolean;
   sidebarWidth: number;
   quickReactions: string[];
@@ -267,7 +268,8 @@ export type UiEvent =
   | { type: "settings"; settings: Settings }
   | { type: "privacy"; privacy: Privacy }
   | { type: "me"; contact: Contact }
-  | { type: "notify"; chat: Jid; id: string; title: string; body: string; avatar: string | null }
+  | { type: "notify"; chat: Jid; id: string; title: string; body: string; avatar: string | null; image: string | null }
+  | { type: "open"; chat: Jid }
   | { type: "call"; id: string; from: Jid; video: boolean; ringing: boolean }
   | { type: "recording"; level: number; elapsed: number }
   | { type: "progress"; chat: Jid; id: string; progress: number }
@@ -286,4 +288,6 @@ export interface InitData {
   demo: boolean;
   platform: string;
   version: string;
+  /** A chat whose notification was clicked before the window had loaded. */
+  open?: Jid;
 }

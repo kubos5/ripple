@@ -167,6 +167,17 @@ function AppearancePane() {
         </Row>
         <Check title="Compact chat list" sub="Fit more conversations on screen" on={s().compact} set={(v) => updateSettings({ compact: v })} />
       </div>
+      <Show when={inTauri}>
+        <h3>App icon</h3>
+        <div class="card">
+          <Check
+            title="Green app icon"
+            sub={`Easier to spot in the ${state.platform === "macos" ? "Dock" : "taskbar"} if you're used to WhatsApp's green icon`}
+            on={s().greenIcon}
+            set={(v) => updateSettings({ greenIcon: v })}
+          />
+        </div>
+      </Show>
     </>
   );
 }

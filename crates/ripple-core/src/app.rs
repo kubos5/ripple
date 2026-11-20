@@ -52,6 +52,27 @@ fn val<T: serde::Serialize>(v: T) -> Result<Value> {
     Ok(serde_json::to_value(v)?)
 }
 
+/// Pictures prepared for notifications (round avatars, photo and sticker previews).
+const NOTIFY_DIR: &str = "notifications";
+
+/// Notification pictures are only needed while the notification is on screen or in the
+/// notification centre; older ones are deleted at startup.
+fn prune_notification_files(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let week = std::time::Duration::from_secs(7 * 24 * 3600);
+    for e in entries.flatten() {
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > week);
+        if old {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+/// A file name made from a token or id.
+fn file_safe(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect()
+}
+
 impl App {
     pub fn new(root: PathBuf, events: broadcast::Sender<UiEvent>, demo: bool) -> Result<Arc<App>> {
         std::fs::create_dir_all(&root).with_context(|| format!("create {}", root.display()))?;
@@ -69,6 +90,7 @@ impl App {
         };
         let me = store.meta::<String>("me").unwrap_or_default();
         let chats = store.chats().into_iter().map(|c| (c.id.clone(), c)).collect();
+        prune_notification_files(&root.join(NOTIFY_DIR));
         Ok(Arc::new(App {
             store,
             media,
@@ -340,23 +362,115 @@ impl App {
     }
 
     /// Muted and archived chats never notify, not even for a mention or a reply.
-    fn notify(&self, chat: &Chat, m: &Message) {
+    fn notify(self: &Arc<Self>, chat: &Chat, m: &Message) {
         let s = self.settings();
         let now = now_ms();
         let muted = chat.muted_until == -1 || chat.muted_until > now;
         if !s.notifications || chat.archived || muted {
             return;
         }
-        // Names come from the contact book, not `chat.name`, which is fixed when the
-        // chat is created and is often still a bare phone number.
-        let title = self.display_name(&chat.id);
-        let body = if chat.kind == ChatKind::Direct {
-            m.content.summary()
+        let previewed = !m.view_once && matches!(m.content, Content::Image { .. } | Content::Sticker { .. });
+        if !s.notification_preview || !previewed {
+            return self.emit_notify(chat, m, None);
+        }
+        // Photos and stickers wait (briefly) for their file so the notification can show it.
+        let (app, chat, m) = (self.clone(), chat.id.clone(), m.clone());
+        tokio::spawn(async move {
+            let image = app.notification_preview(&m).await;
+            // Read here or on the phone while the picture loaded: too late to notify.
+            let Some(chat) = app.chat(&chat).filter(|c| c.unread > 0 && !app.is_viewing(&c.id)) else { return };
+            app.emit_notify(&chat, &m, image);
+        });
+    }
+
+    fn emit_notify(&self, chat: &Chat, m: &Message, image: Option<PathBuf>) {
+        let (title, body, avatar) = if self.settings().notification_preview {
+            // Names come from the contact book, not `chat.name`, which is fixed when the
+            // chat is created and is often still a bare phone number.
+            let text = m.notification_text(|jid| self.display_name(jid));
+            let body = if chat.kind == ChatKind::Direct { text } else { format!("{}: {text}", self.display_name(&m.sender)) };
+            (self.display_name(&chat.id), truncate(&body, 180), self.notification_avatar(chat))
         } else {
-            format!("{}: {}", self.display_name(&m.sender), m.content.summary())
+            // "Show message preview" off hides who wrote, as well as what.
+            ("New message".into(), String::new(), None)
         };
-        let body = if s.notification_preview { truncate(&body, 180) } else { "New message".into() };
-        self.emit(UiEvent::Notify { chat: chat.id.clone(), id: m.id.clone(), title, body, avatar: chat.avatar.clone() });
+        let image = image.map(|p| p.to_string_lossy().into_owned());
+        self.emit(UiEvent::Notify { chat: chat.id.clone(), id: m.id.clone(), title, body, avatar, image });
+    }
+
+    /// The chat's picture as a round PNG, made once per picture.
+    fn notification_avatar(&self, chat: &Chat) -> Option<String> {
+        let token = chat.avatar.as_deref()?;
+        let src = self.media.path(token).filter(|p| p.is_file())?;
+        let out = self.root.join(NOTIFY_DIR).join(format!("avatar-{}.png", file_safe(token)));
+        if !out.is_file() {
+            std::fs::create_dir_all(out.parent()?).ok()?;
+            if let Err(e) = media::notification_avatar(&src, &out) {
+                log::debug!("no notification picture for {}: {e:#}", chat.id);
+                return None;
+            }
+        }
+        Some(out.to_string_lossy().into_owned())
+    }
+
+    /// A PNG preview of a photo or sticker, downloading it first when that is allowed.
+    async fn notification_preview(self: &Arc<Self>, m: &Message) -> Option<PathBuf> {
+        let media = m.content.media()?;
+        let src = match (&media.state, &media.token) {
+            (MediaState::Ready, Some(token)) => self.media.path(token),
+            // Stickers are small and always fetched; photos follow the auto-download setting.
+            _ if matches!(m.content, Content::Sticker { .. }) || self.settings().auto_images => {
+                self.wait_for_media(&m.chat, &m.id, std::time::Duration::from_secs(4)).await
+            }
+            _ => None,
+        }?;
+        let out = self.root.join(NOTIFY_DIR).join(format!("preview-{}.png", file_safe(&m.id)));
+        tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(out.parent()?).ok()?;
+            match media::notification_preview(&src, &out) {
+                Ok(()) => Some(out),
+                Err(e) => {
+                    log::debug!("no notification preview: {e:#}");
+                    None
+                }
+            }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    /// Starts downloading a message's media if needed and waits up to `wait` for the file.
+    async fn wait_for_media(self: &Arc<Self>, chat: &str, id: &str, wait: std::time::Duration) -> Option<PathBuf> {
+        let _ = self.start_download(chat, id);
+        let until = std::time::Instant::now() + wait;
+        loop {
+            let m = self.store.message(chat, id)?;
+            let media = m.content.media()?;
+            match media.state {
+                MediaState::Ready => return media.token.as_deref().and_then(|t| self.media.path(t)),
+                MediaState::Failed => return None,
+                _ if std::time::Instant::now() >= until => return None,
+                _ => tokio::time::sleep(std::time::Duration::from_millis(100)).await,
+            }
+        }
+    }
+
+    /// An incoming call raises a notification of its own, removed once it stops ringing.
+    /// Calls ring even in muted chats, as they do on the phone.
+    fn notify_call(&self, id: &str, from: &str, video: bool) {
+        let s = self.settings();
+        if !s.notifications {
+            return;
+        }
+        let chat = self.ensure_chat(&bare(from));
+        let (title, body, avatar) = if s.notification_preview {
+            let what = if video { "📹 Incoming video call" } else { "📞 Incoming voice call" };
+            (self.display_name(&chat.id), what.to_string(), self.notification_avatar(&chat))
+        } else {
+            ("Incoming call".into(), String::new(), None)
+        };
+        self.emit(UiEvent::Notify { chat: chat.id.clone(), id: call_note_id(id), title, body, avatar, image: None });
     }
 
     /// Changes a stored message and tells the UI. Also refreshes the chat
@@ -580,6 +694,9 @@ impl App {
 
     pub fn ingest_call(self: &Arc<Self>, id: &str, from: &str, video: bool, ringing: bool, missed: bool) {
         self.emit(UiEvent::Call { id: id.to_string(), from: from.to_string(), video, ringing });
+        if ringing {
+            self.notify_call(id, from, video);
+        }
         if !ringing && missed {
             let m = Message {
                 id: format!("CALL{id}"),
@@ -1154,31 +1271,7 @@ impl App {
                 "message": self.store.message(&chat, &id),
                 "receipts": self.store.receipts(&chat, &id),
             })),
-            Request::Download { chat, id } => {
-                let target = self.store.message(&chat, &id).ok_or_else(|| anyhow!("Message not found"))?;
-                let Some(media) = target.content.media() else { bail!("Nothing to download") };
-                if matches!(media.state, MediaState::Ready | MediaState::Downloading) {
-                    return Ok(Value::Null);
-                }
-                self.message_mut(&chat, &id, |m| {
-                    if let Some(media) = m.content.media_mut() {
-                        media.state = MediaState::Downloading;
-                    }
-                });
-                let app = self.clone();
-                tokio::spawn(async move {
-                    let res = app.net().exec(NetOp::Download { target: Box::new(target) }).await;
-                    let token = match res {
-                        Ok(v) => v.get("token").and_then(|t| t.as_str()).map(String::from),
-                        Err(e) => {
-                            log::warn!("download failed: {e:#}");
-                            None
-                        }
-                    };
-                    app.set_media(&chat, &id, token);
-                });
-                Ok(Value::Null)
-            }
+            Request::Download { chat, id } => self.start_download(&chat, &id).map(|_| Value::Null),
             Request::Played { chat, id } => {
                 if let Some(m) = self.store.message(&chat, &id)
                     && !m.from_me {
@@ -1398,6 +1491,33 @@ impl App {
                 Ok(Value::Null)
             }
         }
+    }
+
+    /// Downloads a message's media in the background, unless it is already here or on its way.
+    fn start_download(self: &Arc<Self>, chat: &str, id: &str) -> Result<()> {
+        let target = self.store.message(chat, id).ok_or_else(|| anyhow!("Message not found"))?;
+        let Some(media) = target.content.media() else { bail!("Nothing to download") };
+        if matches!(media.state, MediaState::Ready | MediaState::Downloading) {
+            return Ok(());
+        }
+        self.message_mut(chat, id, |m| {
+            if let Some(media) = m.content.media_mut() {
+                media.state = MediaState::Downloading;
+            }
+        });
+        let (app, chat, id) = (self.clone(), chat.to_string(), id.to_string());
+        tokio::spawn(async move {
+            let res = app.net().exec(NetOp::Download { target: Box::new(target) }).await;
+            let token = match res {
+                Ok(v) => v.get("token").and_then(|t| t.as_str()).map(String::from),
+                Err(e) => {
+                    log::warn!("download failed: {e:#}");
+                    None
+                }
+            };
+            app.set_media(&chat, &id, token);
+        });
+        Ok(())
     }
 
     /// Like [`fire`], but failures are only logged (presence, typing, …).

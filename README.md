@@ -40,10 +40,33 @@ asking your phone to re-upload them, as WhatsApp's own linked devices do.
 settings, invite links with QR codes, join requests; community home with the
 announcements channel and subgroups, creating communities, linking groups.
 
-**Desktop.** Native notifications (never for muted or archived chats), unread badge, tray icon (Windows and Linux),
+**Notifications.** Native on every platform: the chat's picture, the message
+as WhatsApp words it ("📷 Photo", "🎤 Voice message (0:12)", names instead of
+numbers for @mentions), and a preview of a photo or sticker. Clicking one
+brings Ripple forward with that chat open, and they disappear once the chat has
+been read, here or on another device. Deleted messages and calls that stop
+ringing take their notification with them. Muted and archived chats never
+notify; incoming calls do, as on the phone. With "Show message preview" off a
+notification says only "New message".
+
+| | Chat picture | Photo or sticker | Click opens the chat | Removed when read |
+|---|---|---|---|---|
+| macOS (UserNotifications) | thumbnail on the right¹ | thumbnail on the right | yes | yes |
+| Windows (toasts) | round, in place of the app logo | below the text | yes | yes, from Action Center too |
+| Linux (freedesktop D-Bus) | notification image | notification image² | yes, focusing the window on Wayland too | yes |
+
+¹ macOS keeps the app's icon on the left; only apps with Apple's paid
+communication-notification entitlement may replace it. When a message has a
+photo or sticker, that takes the thumbnail's place.
+² The freedesktop spec has room for one image, so a photo or sticker replaces the chat picture.
+
+**Desktop.** Unread badge (the Dock on macOS, a drawn overlay on the Windows
+taskbar, launchers that support it on Linux), tray icon (Windows and Linux),
 launch at login, light and dark themes, accent colours, a choice of fonts,
-adjustable text size. On macOS 26 and later the app icon takes the system's
-dark icon background in dark mode.
+adjustable text size, and an optional green app icon for anyone used to
+spotting WhatsApp's. On Windows and Linux the icon is the three circles on a
+transparent background; on macOS 26 and later it takes the system's dark icon
+background in dark mode.
 
 **Motion.** The interface doesn't animate: menus, sheets, messages and panels
 appear and disappear instantly. The only things that move on their own are the
@@ -59,6 +82,7 @@ place when you let go.
 ```
 crates/ripple-core     All logic: models, SQLite store, WhatsApp session, media, demo
 crates/ripple-bridge   Dev-only WebSocket bridge so the UI can run in a browser tab
+crates/ripple-notify   Native notifications for macOS, Windows and Linux
 ui/                    SolidJS + TypeScript interface
 ui/src-tauri           Desktop shell (window, tray, notifications, media protocol)
 ```
@@ -116,7 +140,7 @@ Windows and Linux machines and attaches them to a draft release:
 2. Tag the commit and push the tag:
 
    ```bash
-   git tag v0.1.0 && git push origin v0.1.0
+   git tag v0.1.1 && git push origin v0.1.1
    ```
 
 3. When the run finishes (about 15 minutes), open the repository's Releases
@@ -134,7 +158,9 @@ first launch:
 - **macOS:** Gatekeeper refuses to open an unsigned app downloaded from the web
   ("damaged" or "can't be verified"). The person installing it can run
   `xattr -cr /Applications/Ripple.app` once, or allow it under
-  System Settings › Privacy & Security.
+  System Settings › Privacy & Security. Builds without a certificate are
+  signed ad hoc (`signingIdentity: "-"`), which macOS needs before it lets an
+  app post notifications.
 
 To sign and notarise the Mac builds, you need an Apple Developer account. Add
 these repository secrets and the workflow uses them automatically:
@@ -165,8 +191,11 @@ chat and 2,000 extra chats.
 ## Tests
 
 ```bash
-cargo test -p ripple-core -p ripple-bridge
+cargo test -p ripple-core -p ripple-bridge -p ripple-notify -p ripple
 ```
+
+The Linux notification code is tested against a stand-in notification service
+over D-Bus, so those tests run on any Unix system.
 
 ```bash
 cd ui && npm run typecheck && npm test
@@ -192,7 +221,15 @@ Chat and message lists are virtualised, so only what is on screen is rendered
 ## Known limitations
 
 - Windows and Linux builds are produced by CI (and the Windows installer can be
-  cross-built on a Mac), but neither has been run by hand yet.
+  cross-built on a Mac), but neither has been run by hand yet. Their
+  notification code compiles for both and the Linux D-Bus side is tested
+  against a stand-in service, but toasts and real notification daemons have not
+  been tried on those systems.
+- The green icon applies while Ripple runs. A pinned taskbar or Dock icon shows
+  the default one while Ripple is closed, and GNOME and KDE on Wayland always
+  show the icon from Ripple's `.desktop` file in the dock.
+- App icons for Windows and Linux are drawn by
+  `cargo run -p ripple-core --no-default-features --example app_icons`.
 - Live WhatsApp behaviour depends on `whatsapp-rust`, which is pre-1.0; expect
   occasional breakage when WhatsApp changes its protocol. Ripple pins an
   unreleased upstream commit, because sticker sync is not in a release yet.

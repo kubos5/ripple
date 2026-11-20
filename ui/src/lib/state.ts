@@ -79,7 +79,7 @@ interface State {
 const DEFAULT_SETTINGS: Settings = {
   theme: "system", accent: "mono", font: "system", design: 2, textScale: 1, compact: false, enterSends: true, notifications: true,
   notificationPreview: true, notificationSound: true, autoImages: true, autoAudio: true, autoVideo: false,
-  autoDocuments: false, linkPreviews: true, closeToTray: true, autostart: false, spellcheck: true,
+  autoDocuments: false, linkPreviews: true, closeToTray: true, autostart: false, greenIcon: false, spellcheck: true,
   sidebarWidth: 348, quickReactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
 };
 
@@ -259,6 +259,14 @@ async function loadInit() {
     setState("contacts", reconcile(index(init.contacts)));
     setState("groups", reconcile(index(init.groups)));
   });
+  if (init.open) revealChat(init.open);
+}
+
+/** Shows a chat whose notification was clicked, wherever the user was in the app. */
+export function revealChat(id: Jid) {
+  const chat = state.chats[id];
+  setState({ modal: null, lightbox: null, query: "", view: chat?.archived ? "archived" : "chats" });
+  void openChat(id);
 }
 
 export async function boot() {
@@ -359,6 +367,8 @@ function apply(ev: UiEvent) {
       return setState("badge", ev.count);
     case "stickers":
       return setStickerRev((n) => n + 1);
+    case "open":
+      return revealChat(ev.chat);
     case "notify":
     case "progress":
       return;

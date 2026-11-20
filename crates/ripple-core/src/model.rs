@@ -574,6 +574,51 @@ impl Message {
     }
 }
 
+impl Message {
+    /// What a notification says about this message: its text, or the kind of attachment and
+    /// its caption, the way WhatsApp's own notifications put it. `name_of` turns the
+    /// "@number" of a mention into the person's name.
+    pub fn notification_text(&self, name_of: impl Fn(&str) -> String) -> String {
+        let with = |icon: &str, label: &str, caption: &str| {
+            format!("{icon} {}", if caption.is_empty() { label } else { caption })
+        };
+        let text = match &self.content {
+            Content::Text { text, .. } => text.clone(),
+            Content::Image { .. } if self.view_once => "📷 View once photo".into(),
+            Content::Video { .. } if self.view_once => "🎥 View once video".into(),
+            Content::Image { caption, .. } => with("📷", "Photo", caption),
+            Content::Video { gif: true, caption, .. } => with("🎞️", "GIF", caption),
+            Content::Video { caption, .. } => with("🎥", "Video", caption),
+            Content::Audio { voice: true, duration, .. } => {
+                format!("🎤 Voice message ({}:{:02})", duration / 60, duration % 60)
+            }
+            Content::Audio { .. } => "🎵 Audio".into(),
+            Content::Document { name, caption, .. } => with("📄", name, caption),
+            Content::Sticker { .. } => "Sticker".into(),
+            Content::Location { live: true, .. } => "📍 Live location".into(),
+            Content::Location { name, .. } => with("📍", "Location", name),
+            Content::Contacts { cards } => match cards.as_slice() {
+                [one] => format!("👤 {}", one.name),
+                many => format!("👤 {} contacts", many.len()),
+            },
+            Content::Poll { question, .. } => format!("📊 {question}"),
+            Content::Event { name, .. } => format!("📅 {name}"),
+            Content::Call { video: true, missed: true, .. } => "📹 Missed video call".into(),
+            Content::Call { missed: true, .. } => "📞 Missed voice call".into(),
+            other => other.summary(),
+        };
+        let mut text = text;
+        for jid in &self.mentions {
+            let user = jid.split('@').next().unwrap_or_default().split(':').next().unwrap_or_default();
+            let tag = format!("@{user}");
+            if !user.is_empty() && text.contains(&tag) {
+                text = text.replace(&tag, &format!("@{}", name_of(jid)));
+            }
+        }
+        text
+    }
+}
+
 pub fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -645,6 +690,8 @@ pub struct Settings {
     pub link_previews: bool,
     pub close_to_tray: bool,
     pub autostart: bool,
+    /// A green app icon (Dock, taskbar, tray) for people used to spotting WhatsApp's.
+    pub green_icon: bool,
     pub spellcheck: bool,
     pub sidebar_width: u32,
     /// Quick-reaction emoji shown on hover.
@@ -671,6 +718,7 @@ impl Default for Settings {
             link_previews: true,
             close_to_tray: true,
             autostart: false,
+            green_icon: false,
             spellcheck: true,
             sidebar_width: 348,
             quick_reactions: ["👍", "❤️", "😂", "😮", "😢", "🙏"].map(String::from).to_vec(),
@@ -820,5 +868,46 @@ mod tests {
     fn truncate_is_char_safe() {
         assert_eq!(truncate("héllo wörld", 5), "héllo…");
         assert_eq!(truncate("ok", 5), "ok");
+    }
+
+    #[test]
+    fn notification_text() {
+        let msg = |content: Content| Message {
+            id: "M".into(),
+            chat: "c@s.whatsapp.net".into(),
+            seq: 0,
+            sender: "c@s.whatsapp.net".into(),
+            from_me: false,
+            ts: 0,
+            content,
+            status: Status::Read,
+            quote: None,
+            reactions: vec![],
+            mentions: vec![],
+            starred: false,
+            pinned_until: 0,
+            edited: 0,
+            forwarded: 0,
+            view_once: false,
+            expires: 0,
+            album: None,
+        };
+        let names = |jid: &str| if jid.starts_with("4477") { "Ana".to_string() } else { "?".to_string() };
+        let media = || Media { token: None, mime: "image/jpeg".into(), size: 1, state: MediaState::Remote };
+        let image = |caption: &str| Content::Image { media: media(), caption: caption.into(), width: 1, height: 1, thumb: None };
+
+        let mut m = msg(Content::Text { text: "hi @447700900123, and @447700900123:12".into(), preview: None });
+        m.mentions = vec!["447700900123@s.whatsapp.net".into()];
+        assert_eq!(m.notification_text(names), "hi @Ana, and @Ana:12");
+        assert_eq!(msg(image("")).notification_text(names), "📷 Photo");
+        assert_eq!(msg(image("Look")).notification_text(names), "📷 Look");
+        let mut once = msg(image("secret"));
+        once.view_once = true;
+        assert_eq!(once.notification_text(names), "📷 View once photo");
+        let voice = Content::Audio { media: media(), duration: 75, voice: true, waveform: vec![] };
+        assert_eq!(msg(voice).notification_text(names), "🎤 Voice message (1:15)");
+        let sticker = Content::Sticker { media: media(), width: 512, height: 512, animated: false };
+        assert_eq!(msg(sticker).notification_text(names), "Sticker");
+        assert_eq!(msg(Content::Call { video: false, missed: true, duration: 0 }).notification_text(names), "📞 Missed voice call");
     }
 }

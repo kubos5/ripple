@@ -202,6 +202,34 @@ pub fn to_avatar(path: &Path) -> Result<Vec<u8>> {
     encode_jpeg(&square, 85)
 }
 
+/// A round PNG of a profile picture, for notifications (transparent outside the circle).
+pub fn notification_avatar(src: &Path, to: &Path) -> Result<()> {
+    let img = image::open(src).context("read picture")?;
+    let (w, h) = img.dimensions();
+    let side = w.min(h);
+    let size = side.clamp(64, 256);
+    let mut sq = img.crop_imm((w - side) / 2, (h - side) / 2, side, side).resize_exact(size, size, FilterType::Lanczos3).to_rgba8();
+    let r = size as f32 / 2.0;
+    for (x, y, p) in sq.enumerate_pixels_mut() {
+        let d = ((x as f32 + 0.5 - r).powi(2) + (y as f32 + 0.5 - r).powi(2)).sqrt();
+        // One pixel of anti-aliasing at the edge.
+        let cover = (r - d + 0.5).clamp(0.0, 1.0);
+        p[3] = (p[3] as f32 * cover).round() as u8;
+    }
+    sq.save_with_format(to, ImageFormat::Png).context("write picture")?;
+    Ok(())
+}
+
+/// A PNG preview of a photo or sticker for notifications, at most 512px on its longer side.
+/// Animated stickers give their first frame; transparency is kept.
+pub fn notification_preview(src: &Path, to: &Path) -> Result<()> {
+    let bytes = std::fs::read(src).context("read image")?;
+    let img = image::load_from_memory(&bytes).context("decode image")?;
+    let img = if img.width() > 512 || img.height() > 512 { img.resize(512, 512, FilterType::Triangle) } else { img };
+    img.to_rgba8().save_with_format(to, ImageFormat::Png).context("write preview")?;
+    Ok(())
+}
+
 /// WebP files with an `ANIM` chunk are animated stickers.
 pub fn is_animated_webp(bytes: &[u8]) -> bool {
     bytes.len() > 32 && &bytes[0..4] == b"RIFF" && bytes[..bytes.len().min(256)].windows(4).any(|w| w == b"ANIM")
@@ -296,6 +324,20 @@ mod tests {
         assert!(!is_animated_webp(&sticker));
         assert!(to_avatar(&path).unwrap().len() > 100);
         assert!(m.usage() > 0);
+
+        // Notification pictures: a round avatar and a PNG preview of a WebP sticker.
+        let round = dir.join("round.png");
+        notification_avatar(&path, &round).unwrap();
+        let r = image::open(&round).unwrap().to_rgba8();
+        assert_eq!(r.dimensions(), (100, 100));
+        assert_eq!(r.get_pixel(0, 0)[3], 0, "corners are transparent");
+        assert_eq!(r.get_pixel(50, 50)[3], 255, "the middle is opaque");
+        let webp = dir.join("s.webp");
+        std::fs::write(&webp, &sticker).unwrap();
+        let preview = dir.join("s.png");
+        notification_preview(&webp, &preview).unwrap();
+        assert_eq!(dimensions(&preview), Some((512, 512)));
+        assert_eq!(image::open(&preview).unwrap().to_rgba8().get_pixel(0, 0)[3], 0, "transparency is kept");
         std::fs::remove_dir_all(dir).ok();
     }
 

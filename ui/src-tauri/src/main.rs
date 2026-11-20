@@ -2,11 +2,17 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod badge;
+mod icons;
+
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ripple_core::Ripple;
-use ripple_core::api::{Request, UiEvent};
+use ripple_core::api::{Request, UiEvent, call_note_id};
+use ripple_core::model::{Content, bare};
+use ripple_notify::{AppInfo, Note, Notifier};
 use tauri::http::{Response, StatusCode, header};
 use tauri::ipc::Channel;
 #[cfg(not(target_os = "macos"))]
@@ -53,6 +59,20 @@ fn subscribe(core: tauri::State<'_, Core>, channel: Channel<Vec<UiEvent>>) {
     });
 }
 
+/// Brings the window forward for a notification click. On Wayland the window may only take
+/// focus with the activation token the notification service handed over.
+fn activate(app: &AppHandle, token: Option<String>) {
+    #[cfg(target_os = "linux")]
+    if let (Some(token), Some(w)) = (&token, app.get_webview_window("main"))
+        && let Ok(gtk_window) = w.gtk_window()
+    {
+        use gtk::prelude::GtkWindowExt as _;
+        gtk_window.set_startup_id(token);
+    }
+    let _ = token;
+    show_main(app);
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -61,33 +81,131 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-fn apply_settings(app: &AppHandle, s: &ripple_core::model::Settings) {
+fn apply_settings(app: &AppHandle, s: &ripple_core::model::Settings, notes: Option<&Notifier>) {
     CLOSE_TO_TRAY.store(s.close_to_tray, Ordering::Relaxed);
+    if icons::apply(app, s.green_icon)
+        && let (Some(n), Some(icon)) = (notes, notification_icon(app, s.green_icon))
+    {
+        n.set_icon(&icon);
+    }
+    if s.notifications
+        && let Some(n) = notes
+    {
+        n.prepare();
+    }
     let auto = app.autolaunch();
     if auto.is_enabled().unwrap_or(false) != s.autostart {
         let _ = if s.autostart { auto.enable() } else { auto.disable() };
     }
 }
 
+fn window_focused(app: &AppHandle) -> bool {
+    app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false))
+}
+
+/// The app icon as a file, for the notification header on Windows (written per colour).
+fn notification_icon(app: &AppHandle, green: bool) -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let dir = app.path().app_data_dir().ok()?;
+    let path = dir.join(if green { "notification-icon-green.png" } else { "notification-icon.png" });
+    std::fs::create_dir_all(&dir).ok()?;
+    std::fs::write(&path, icons::png(green)).ok()?;
+    Some(path)
+}
+
+/// The system's notification service, wired to open a chat when a notification is clicked.
+fn notifier(app: &AppHandle, core: &Arc<Ripple>) -> Option<Notifier> {
+    let info = AppInfo {
+        id: app.config().identifier.clone(),
+        name: "Ripple".into(),
+        desktop_entry: "Ripple".into(),
+        icon_name: "ripple".into(),
+        icon: notification_icon(app, core.app().settings().green_icon),
+    };
+    let (app, core) = (app.clone(), core.clone());
+    Notifier::new(
+        info,
+        Arc::new(move |chat, token| {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || activate(&handle, token));
+            core.reveal(&chat);
+        }),
+    )
+}
+
 /// Reacts to core events that need the operating system: notifications, badges, settings.
-fn watch(app: AppHandle, core: Arc<Ripple>) {
-    apply_settings(&app, &core.app().settings());
+fn watch(app: AppHandle, core: Arc<Ripple>, notes: Option<Notifier>) {
+    apply_settings(&app, &core.app().settings(), notes.as_ref());
     let mut rx = core.subscribe();
     tauri::async_runtime::spawn(async move {
         loop {
-            match rx.recv().await {
-                Ok(UiEvent::Notify { title, body, .. }) => {
-                    let focused = app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false));
-                    if !focused {
-                        let mut n = app.notification().builder().title(title).body(body);
-                        if core.app().settings().notification_sound {
-                            n = n.sound("default");
+            let ev = match rx.recv().await {
+                Ok(ev) => ev,
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break,
+            };
+            match ev {
+                UiEvent::Notify { chat, id, title, body, avatar, image } => {
+                    // Like WhatsApp: no banners while Ripple is the window in front.
+                    if window_focused(&app) {
+                        continue;
+                    }
+                    let sound = core.app().settings().notification_sound;
+                    match &notes {
+                        Some(n) => n.show(Note {
+                            chat,
+                            id,
+                            title,
+                            body,
+                            avatar: avatar.map(PathBuf::from),
+                            image: image.map(PathBuf::from),
+                            sound,
+                        }),
+                        // macOS outside an app bundle (`tauri dev`): a plain notification.
+                        None => {
+                            let mut n = app.notification().builder().title(title).body(body);
+                            if sound {
+                                n = n.sound("default");
+                            }
+                            let _ = n.show();
                         }
-                        let _ = n.show();
                     }
                 }
-                Ok(UiEvent::Badge { count }) => {
+                // A chat with nothing unread has been read, here or on another device.
+                UiEvent::Chat { chat } if chat.unread == 0 => {
+                    if let Some(n) = &notes {
+                        n.clear_chat(&chat.id);
+                    }
+                }
+                UiEvent::ChatRemoved { id } => {
+                    if let Some(n) = &notes {
+                        n.clear_chat(&id);
+                    }
+                }
+                UiEvent::Message { message, .. } if matches!(message.content, Content::Deleted) => {
+                    if let Some(n) = &notes {
+                        n.remove(&message.chat, &message.id);
+                    }
+                }
+                UiEvent::MessageRemoved { chat, id } => {
+                    if let Some(n) = &notes {
+                        n.remove(&chat, &id);
+                    }
+                }
+                // The call stopped ringing: answered elsewhere, declined or missed.
+                UiEvent::Call { id, from, ringing: false, .. } => {
+                    if let Some(n) = &notes {
+                        n.remove(&bare(&from), &call_note_id(&id));
+                    }
+                }
+                UiEvent::Badge { count } => {
                     if let Some(w) = app.get_webview_window("main") {
+                        // Windows has no badge for desktop apps; it gets a drawn overlay instead.
+                        #[cfg(windows)]
+                        let _ = w.set_overlay_icon(badge::overlay(count).map(|(rgba, w, h)| tauri::image::Image::new_owned(rgba, w, h)));
+                        #[cfg(not(windows))]
                         let _ = w.set_badge_count(if count > 0 { Some(count as i64) } else { None });
                     }
                     if let Some(tray) = app.tray_by_id("main") {
@@ -95,10 +213,15 @@ fn watch(app: AppHandle, core: Arc<Ripple>) {
                         let _ = tray.set_tooltip(Some(tip));
                     }
                 }
-                Ok(UiEvent::Settings { settings }) => apply_settings(&app, &settings),
-                Ok(UiEvent::Reset) => apply_settings(&app, &core.app().settings()),
-                Ok(_) | Err(RecvError::Lagged(_)) => {}
-                Err(RecvError::Closed) => break,
+                UiEvent::Settings { settings } => apply_settings(&app, &settings, notes.as_ref()),
+                // Logged out, or into or out of the demo: none of the old notifications apply.
+                UiEvent::Reset => {
+                    if let Some(n) = &notes {
+                        n.clear_all();
+                    }
+                    apply_settings(&app, &core.app().settings(), notes.as_ref());
+                }
+                _ => {}
             }
         }
     });
@@ -132,6 +255,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn main() {
+    // Before any window exists, so the taskbar and notifications agree on who Ripple is.
+    ripple_notify::set_process_app_id("app.ripple.desktop");
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(
@@ -181,9 +306,11 @@ fn main() {
             let demo = std::env::var_os("RIPPLE_DEMO").is_some();
             let core = tauri::async_runtime::block_on(Ripple::open(dir, demo))?;
             app.manage(Core(core.clone()));
-            watch(app.handle().clone(), core);
+            // The tray first, so the settings applied next can recolour it.
             #[cfg(not(target_os = "macos"))]
             build_tray(app.handle())?;
+            let notes = notifier(app.handle(), &core);
+            watch(app.handle().clone(), core, notes);
             Ok(())
         })
         .on_window_event(|window, event| {
